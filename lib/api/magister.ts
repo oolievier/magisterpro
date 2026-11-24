@@ -1,10 +1,10 @@
 /* ===========================================================================
- * Magister API v6 service (server-side).
- * Gebruikt altijd de Next.js proxy /api/magister/[...path] om CORS te omzeilen.
+ * Magister API v6 service.
+ * Alle calls gaan via de server-side proxy /api/magister/[...path] (CORS).
  * ========================================================================= */
 
 export interface MagisterConfig {
-  subdomain: string;
+  subdomain: string; // school-host of subdomain
   token: string;
 }
 
@@ -20,14 +20,17 @@ export function normalizeSubdomain(input: string): string {
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
     .replace(/\.magister\.net.*$/, "")
     .replace(/[^a-z0-9-]/g, "");
 }
 
-export function magisterBase(subdomain: string): string {
-  const clean = normalizeSubdomain(subdomain);
-  if (!clean) throw new Error("Ongeldige school-subdomain.");
-  return `https://${clean}.magister.net`;
+/** Accepteert zowel "school" als "https://school.magister.net". */
+export function normalizeMagisterHost(input: string): string {
+  const clean = input.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const host = clean.endsWith(".magister.net") ? clean : `${normalizeSubdomain(clean)}.magister.net`;
+  if (!/^[a-z0-9-]+\.magister\.net$/.test(host)) throw new Error("Vul een geldige Magister-school in (bijv. schoolnaam.magister.net).");
+  return host;
 }
 
 async function request<T>(
@@ -35,14 +38,14 @@ async function request<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<ApiResult<T>> {
-  if (!config.token) return { ok: false, error: "Geen Magister Bearer token ingesteld.", status: 401 };
+  if (!config.token) return { ok: false, error: "Geen Magister access_token beschikbaar.", status: 401 };
   try {
     const url = `/api/magister/${path.replace(/^\/+/, "")}`;
     const res = await fetch(url, {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        "x-magister-subdomain": normalizeSubdomain(config.subdomain),
+        "x-magister-subdomain": normalizeMagisterHost(config.subdomain),
         "x-magister-token": config.token,
         ...(init.headers ?? {}),
       },
@@ -52,7 +55,10 @@ async function request<T>(
     let data: unknown = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     if (!res.ok) {
-      return { ok: false, status: res.status, error: (data as { message?: string })?.message ?? `Magister gaf status ${res.status}.` };
+      const msg = (data as { message?: string; omschrijving?: string })?.message
+        ?? (data as { omschrijving?: string })?.omschrijving
+        ?? `Magister gaf status ${res.status}.`;
+      return { ok: false, status: res.status, error: msg };
     }
     return { ok: true, status: res.status, data: data as T };
   } catch (e) {
@@ -60,10 +66,49 @@ async function request<T>(
   }
 }
 
-export interface MagisterPerson { Id: number; Roepnaam: string; Achternaam: string; Klas?: string }
+export interface MagisterPerson {
+  Id: number;
+  Roepnaam?: string;
+  Achternaam?: string;
+  Klas?: string;
+}
+
+export interface MagisterAccount {
+  Persoon?: MagisterPerson;
+  Groep?: { Naam?: string; Omschrijving?: string }[];
+  [key: string]: unknown;
+}
+
+export interface MagisterEnrollment {
+  id: number;
+  isHoofdAanmelding?: boolean;
+  Vakken?: { Naam?: string; Omschrijving?: string; Afkorting?: string }[];
+  [key: string]: unknown;
+}
+
+export interface MagisterGrade {
+  waarde?: number | string;
+  CijferStr?: string;
+  DatumIngevoerd?: string;
+  omschrijving?: string;
+  kolom?: {
+    naam?: string;
+    omschrijving?: string;
+    weegfactor?: number;
+    type?: string;
+    code?: string;
+    Code?: string;
+  };
+  CijferKolom?: { Id?: number; KolomOmschrijving?: string; Weging?: number; IsPTAKolom?: boolean };
+  [key: string]: unknown;
+}
 
 export const magister = {
   testConnection: (config: MagisterConfig) => request<MagisterPerson[]>(config, "api/personen"),
+
+  getAccount(config: MagisterConfig) {
+    return request<MagisterAccount>(config, "api/account");
+  },
 
   async getPerson(config: MagisterConfig): Promise<ApiResult<MagisterPerson>> {
     const res = await request<MagisterPerson[]>(config, "api/personen/me");
@@ -72,13 +117,17 @@ export const magister = {
     return { ok: true, data: person, status: res.status };
   },
 
+  getEnrollments(config: MagisterConfig, personId: number | string) {
+    return request<{ items?: MagisterEnrollment[] }>(config, `api/leerlingen/${personId}/aanmeldingen`);
+  },
+
+  getGrades(config: MagisterConfig, enrollmentId: number | string, top = 250) {
+    return request<{ items?: MagisterGrade[] }>(config, `api/aanmeldingen/${enrollmentId}/cijfers?top=${top}`);
+  },
+
   getAppointments<T = unknown[]>(config: MagisterConfig, personId: number | string, from: string, to: string) {
     const q = new URLSearchParams({ van: from, tot: to });
     return request<T>(config, `api/personen/${personId}/afspraken?${q}`);
-  },
-
-  getGradeOverview<T = unknown>(config: MagisterConfig, personId: number | string) {
-    return request<T>(config, `api/personen/${personId}/cijfers/cijferoverzichtvooraanmelding`);
   },
 
   getGradeColumns<T = unknown[]>(config: MagisterConfig, personId: number | string) {
@@ -93,21 +142,26 @@ export const magister = {
     return request<T>(config, `api/personen/${personId}/opdrachten`);
   },
 
-  getMessages<T = unknown[]>(config: MagisterConfig, personId: number | string) {
-    return request<T>(config, `api/personen/${personId}/berichten`);
+  getMessages<T = unknown[]>(config: MagisterConfig, top = 50) {
+    return request<T>(config, `api/berichten/postvakin/berichten?top=${top}&skip=0`);
   },
 
-  sendMessage(config: MagisterConfig, personId: number | string, body: unknown) {
-    return request(config, `api/personen/${personId}/berichten`, { method: "POST", body: JSON.stringify(body) });
+  getMessageDetail<T = unknown>(config: MagisterConfig, id: number | string) {
+    return request<T>(config, `api/berichten/berichten/${id}`);
   },
 
-  getAbsences<T = unknown[]>(config: MagisterConfig, personId: number | string) {
-    return request<T>(config, `api/personen/${personId}/absenties`);
+  sendMessage(config: MagisterConfig, body: unknown) {
+    return request(config, `api/berichten/berichten`, { method: "POST", body: JSON.stringify(body) });
+  },
+
+  getAbsences<T = unknown[]>(config: MagisterConfig, personId: number | string, from: string, to: string) {
+    const q = new URLSearchParams({ van: from, tot: to });
+    return request<T>(config, `api/personen/${personId}/absenties?${q}`);
   },
 };
 
 /* ---------------------------------------------------------------------------
- * OAuth2 PKCE-hulp (voor de "Live" koppeling).
+ * OAuth2 PKCE-hulp voor een door de school geregistreerde webclient.
  * ------------------------------------------------------------------------- */
 export function createPkceVerifier(length = 64): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
@@ -124,14 +178,28 @@ export async function pkceChallenge(verifier: string): Promise<string> {
     .replace(/=+$/, "");
 }
 
-export function magisterAuthUrl(subdomain: string, clientId: string, redirectUri: string, verifier: string, challenge: string) {
+export interface MagisterAuthOptions {
+  clientId: string;
+  redirectUri: string;
+  verifier: string;
+  challenge: string;
+  state: string;
+  nonce: string;
+  school?: string;
+}
+
+export function magisterAuthUrl(opts: MagisterAuthOptions): string {
   const q = new URLSearchParams({
     response_type: "code",
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    code_challenge: challenge,
+    client_id: opts.clientId,
+    redirect_uri: opts.redirectUri,
+    scope: "openid profile offline_access magister.mobile magister.ecs",
+    code_challenge: opts.challenge,
     code_challenge_method: "S256",
-    state: verifier,
+    state: opts.state,
+    nonce: opts.nonce,
+    prompt: "select_account",
   });
-  return `${magisterBase(subdomain)}/oauth2/authorize?${q}`;
+  if (opts.school) q.set("acr_values", `tenant:${normalizeMagisterHost(opts.school)}`);
+  return `https://accounts.magister.net/connect/authorize?${q}`;
 }

@@ -49,11 +49,16 @@ export function KwtModal({ group, onClose }: { group: ChoiceGroup | null; onClos
       toast("Deze keuzeles zit vol", "warning", "Kies een andere optie of zet je op de wachtlijst via school.");
       return;
     }
-    setBusy(true);
-    if (state.connection.mode === "live" && state.connection.zermeloToken) {
-      const res = await zermelo.enroll({ subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken }, group.id, optionId);
-      if (!res.ok) { setBusy(false); toast("Inschrijven via Zermelo mislukt", "warning", res.error); return; }
+    if (!state.connection.zermeloToken) {
+      toast("Zermelo niet gekoppeld", "warning", "Koppel eerst je Zermelo-account via Instellingen.");
+      return;
     }
+    setBusy(true);
+    const res = await zermelo.enroll(
+      { subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken },
+      group.id, optionId
+    );
+    if (!res.ok) { setBusy(false); toast("Inschrijven via Zermelo mislukt", "warning", res.error); return; }
     enroll(group.id, optionId);
     setBusy(false);
     toast("Ingeschreven via Zermelo", "success", `${option.title} · ${option.location} · capaciteit bijgewerkt.`);
@@ -61,11 +66,16 @@ export function KwtModal({ group, onClose }: { group: ChoiceGroup | null; onClos
 
   const doUnenroll = async () => {
     if (!group || !current) return;
-    setBusy(true);
-    if (state.connection.mode === "live" && state.connection.zermeloToken) {
-      const res = await zermelo.unenroll({ subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken }, group.id);
-      if (!res.ok) { setBusy(false); toast("Uitschrijven mislukt", "warning", res.error); return; }
+    if (!state.connection.zermeloToken) {
+      toast("Zermelo niet gekoppeld", "warning", "Koppel eerst je Zermelo-account via Instellingen.");
+      return;
     }
+    setBusy(true);
+    const res = await zermelo.unenroll(
+      { subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken },
+      group.id
+    );
+    if (!res.ok) { setBusy(false); toast("Uitschrijven mislukt", "warning", res.error); return; }
     unenroll(group.id);
     setBusy(false);
     toast("Uitgeschreven", "info", "De plek is weer vrijgegeven in Zermelo.");
@@ -139,7 +149,7 @@ export function KwtModal({ group, onClose }: { group: ChoiceGroup | null; onClos
               );
             })}
           </div>
-          <p className="text-center text-[10px] text-slate-400">Bron: Zermelo Portal API v3 · {state.connection.mode === "demo" ? "demo-sandbox (lokale simulatie)" : "live koppeling"}</p>
+          <p className="text-center text-[10px] text-slate-400">Bron: Zermelo Portal API v3 · live koppeling</p>
         </div>
       )}
     </Modal>

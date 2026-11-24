@@ -56,7 +56,7 @@ async function proxy(request: NextRequest, segments: string[]) {
     });
   } catch (error) {
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Kon Magister niet bereiken." },
+      { message: "Kon Magister niet bereiken. Controleer de schoolhost en je verbinding." },
       { status: 502 }
     );
   }

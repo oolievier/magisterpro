@@ -13,7 +13,7 @@ export function TodayChecklist() {
   const { data, setHomeworkStatus, addHomework, now } = useApp();
   const [addOpen, setAddOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [subjectId, setSubjectId] = useState(data.subjects[0].id);
+  const [subjectId, setSubjectId] = useState(data.subjects[0]?.id ?? "");
   const [due, setDue] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
   const tasks = data.homework
     .filter((h) => h.status !== "done" && daysUntil(h.due, now) <= 2)

@@ -28,9 +28,9 @@ export default function EloPage() {
   const [tab, setTab] = useState<"guides" | "assignments" | "notes">("guides");
   const [guideSubject, setGuideSubject] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(data.studyGuides[0]?.id ?? null);
-  const [noteSubject, setNoteSubject] = useState(data.subjects[0].id);
+  const [noteSubject, setNoteSubject] = useState(data.subjects[0]?.id ?? "");
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(state.notes[data.subjects[0].id] ?? "");
+  const [draft, setDraft] = useState(state.notes[data.subjects[0]?.id ?? ""] ?? "");
 
   const guides = useMemo(() => data.studyGuides.filter((g) => guideSubject === "all" || g.subjectId === guideSubject).sort((a, b) => b.week - a.week), [data.studyGuides, guideSubject]);
   const assignments = data.eloAssignments;

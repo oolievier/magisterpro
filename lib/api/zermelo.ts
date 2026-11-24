@@ -66,50 +66,37 @@ export interface ZermeloTokenResponse {
   expires_in?: number;
 }
 
-/**
- * Wisselt de 12-cijferige koppelingscode om voor een permanent access_token.
- * Probeert eerst het officiële v3-tokenendpoint, daarna de kortere variant.
- */
+/** Wisselt de 12-cijferige koppelingscode om via de eigen serverroute. */
 export async function exchangeZermeloCode(
   subdomain: string,
   code: string
 ): Promise<ApiResult<ZermeloTokenResponse>> {
   const cleanCode = code.replace(/\D/g, "");
+  const cleanSchool = normalizeZermeloSubdomain(subdomain);
   if (cleanCode.length !== 12) {
     return { ok: false, status: 400, error: "De koppelingscode moet precies 12 cijfers bevatten." };
   }
-  const cleanSchool = normalizeZermeloSubdomain(subdomain);
   if (!cleanSchool) return { ok: false, status: 400, error: "Vul eerst een geldige school-subdomain in." };
-
-  for (const path of ["api/v3/oauth/token", "oauth/token"]) {
-    try {
-      const res = await fetch("/api/zermelo/" + path, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-zermelo-subdomain": cleanSchool,
-          "x-zermelo-token": "",
-        },
-        body: JSON.stringify({ code: cleanCode }),
-      });
-      const text = await res.text();
-      let data: unknown = null;
-      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-      if (res.ok && data && typeof data === "object" && "access_token" in data) {
-        return { ok: true, status: res.status, data: data as ZermeloTokenResponse };
-      }
-      if (res.status !== 404) {
-        return {
-          ok: false,
-          status: res.status,
-          error: (data as { message?: string })?.message ?? "De koppelingscode werd niet geaccepteerd.",
-        };
-      }
-    } catch (e) {
-      return { ok: false, status: 0, error: e instanceof Error ? e.message : "Netwerkfout." };
+  try {
+    const res = await fetch("/api/auth/zermelo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ school: cleanSchool, code: cleanCode }),
+    });
+    const text = await res.text();
+    let data: unknown = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error: (data as { message?: string })?.message ?? "De koppelingscode werd niet geaccepteerd.",
+      };
     }
+    return { ok: true, status: res.status, data: data as ZermeloTokenResponse };
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : "Netwerkfout." };
   }
-  return { ok: false, status: 404, error: "Kon het Zermelo token-endpoint niet bereiken." };
 }
 
 export interface ZermeloAppointment {
@@ -152,18 +139,20 @@ export const zermelo = {
 
   /**
    * Inschrijven/wisselen voor een keuzeles. Zermelo publiceert hiervoor geen
-   * officieel documenteerd student-endpoint; we sturen een genormaliseerd
-   * verzoek naar de proxy die het naar de school-instance forwardt. In demo-
-   * modus wordt dit volledig lokaal afgehandeld.
+   * officieel gedocumenteerd student-endpoint; de proxy forwardt het verzoek
+   * naar de school-instance. Alleen beschikbaar met een echte Zermelo-token.
    */
   enroll(config: ZermeloConfig, groupId: string, optionId: string) {
-    return request(config, `api/v3/choices/${groupId}/enrollments`, {
+    const rawGroup = groupId.replace(/^kg-/, "");
+    const rawOption = optionId.replace(/^zer-/, "");
+    return request(config, `api/v3/choices/${encodeURIComponent(rawGroup)}/enrollments`, {
       method: "POST",
-      body: JSON.stringify({ appointmentId: Number(optionId) }),
+      body: JSON.stringify({ appointmentId: Number(rawOption) }),
     });
   },
 
   unenroll(config: ZermeloConfig, groupId: string) {
-    return request(config, `api/v3/choices/${groupId}/enrollments/me`, { method: "DELETE" });
+    const rawGroup = groupId.replace(/^kg-/, "");
+    return request(config, `api/v3/choices/${encodeURIComponent(rawGroup)}/enrollments/me`, { method: "DELETE" });
   },
 };

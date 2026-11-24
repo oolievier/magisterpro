@@ -10,7 +10,7 @@ import { toast } from "@/components/ui/Toaster";
 
 export function SandboxSimulator() {
   const { data, state, addFakeGrade, removeFakeGrade, clearFakeGrades } = useApp();
-  const [subjectId, setSubjectId] = useState(data.subjects[0].id);
+  const [subjectId, setSubjectId] = useState(data.subjects[0]?.id ?? "");
   const [value, setValue] = useState(7);
   const [weight, setWeight] = useState(2);
   const [label, setLabel] = useState("Fictieve toets");

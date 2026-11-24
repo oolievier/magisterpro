@@ -1,38 +1,33 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { demoData } from "@/lib/mock-data";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { emptyAppData, fetchLiveData } from "@/lib/api/live-data";
 import type {
-  AppData,
-  PersistedState,
-  AccentName,
-  ThemeName,
-  HomeworkStatus,
-  EloStatus,
-  Grade,
-  ChoiceGroup,
-  Message,
-  BlockedSlot,
-  Appointment,
+  AppData, PersistedState, AccentName, ThemeName, HomeworkStatus, EloStatus,
+  Grade, ChoiceGroup, Message, BlockedSlot, Appointment,
 } from "@/lib/types";
 
-const STORAGE_KEY = "magisterpro-state-v1";
+const STORAGE_KEY = "magisterpro-state-v2";
+
+const defaultConnection: PersistedState["connection"] = {
+  magisterSchool: "",
+  magisterToken: "",
+  magisterRefreshToken: "",
+  magisterExpiresAt: 0,
+  magisterClientId: "",
+  magisterRedirectUri: "",
+  zermeloSubdomain: "",
+  zermeloToken: "",
+  level: "vwo5",
+  name: "",
+  school: "",
+};
 
 const defaultState: PersistedState = {
   theme: "dark",
   accent: "indigo",
-  connection: {
-    mode: "demo",
-    magisterSubdomain: "",
-    magisterToken: "",
-    zermeloSubdomain: "",
-    zermeloCode: "",
-    zermeloToken: "",
-    level: "vwo5",
-    name: "Sem van Dalen",
-    school: "Laurens Lyceum",
-  },
-  enrollments: { kwt1: "ko1" },
+  connection: defaultConnection,
+  enrollments: {},
   homework: {},
   subtasks: {},
   extraSubtasks: {},
@@ -40,10 +35,7 @@ const defaultState: PersistedState = {
   customHomework: [],
   messages: [],
   sentMessages: [],
-  notes: {
-    s1: "# Wiskunde B — formules\n\n**Afgeleide:** f'(x) = lim h→0 (f(x+h) − f(x))/h\n\n**Productregel:** (fg)' = f'g + fg'\n\n- [ ] Differentiaalvergelijkingen 6.3\n- [ ] Oude examenvraag 2023",
-    s3: "# Scheikunde\n\n**pH** = −¹⁰log[H⁺]\n\nLet op: bij zwakke zuren eerst evenwicht berekenen!",
-  },
+  notes: {},
   eloStatus: {},
   blockedSlots: [],
   focusSessions: [],
@@ -67,6 +59,12 @@ interface AppContextValue {
   state: PersistedState;
   patch: (p: Partial<PersistedState>) => void;
   data: AppData;
+  loading: boolean;
+  loadError: string;
+  lastSync: Date | null;
+  refresh: () => Promise<void>;
+  logout: () => void;
+  resetLocalData: () => void;
   setTheme: (t: ThemeName) => void;
   setAccent: (a: AccentName) => void;
   enroll: (groupId: string, optionId: string) => void;
@@ -91,7 +89,6 @@ interface AppContextValue {
   appointments: Appointment[];
   toggleSidebar: () => void;
   markChore: (id: string) => void;
-  resetDemo: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -106,11 +103,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [state, setState] = useState<PersistedState>(defaultState);
   const [now, setNow] = useState(() => new Date());
+  const [liveData, setLiveData] = useState<AppData>(emptyAppData);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const loadingRef = useRef(false);
+  const connectionRef = useRef(state.connection);
+
+  useEffect(() => { connectionRef.current = state.connection; }, [state.connection]);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setState({ ...defaultState, ...JSON.parse(raw) });
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<PersistedState>;
+        setState({ ...defaultState, ...parsed, connection: { ...defaultConnection, ...(parsed.connection ?? {}) } });
+      }
     } catch { /* corrupte cache negeren */ }
     setMounted(true);
     const timer = setInterval(() => setNow(new Date()), 20_000);
@@ -137,10 +145,75 @@ export function Providers({ children }: { children: React.ReactNode }) {
     root.style.setProperty("--accent-hex", accent.hex);
   }, [state.theme, state.accent, mounted]);
 
+  /** Haalt alle data uit de echte koppelingen; vernieuwt een verlopen token. */
+  const refresh = useCallback(async () => {
+    const connection = connectionRef.current;
+    if (!connection.magisterToken) { setLiveData(emptyAppData()); return; }
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setLoadError("");
+    try {
+      let token = connection.magisterToken;
+      if (connection.magisterExpiresAt && Date.now() > connection.magisterExpiresAt - 60_000 && connection.magisterRefreshToken) {
+        const res = await fetch("/api/auth/magister/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            grant: "refresh",
+            refreshToken: connection.magisterRefreshToken,
+            clientId: connection.magisterClientId || "M6LOAPP",
+          }),
+        });
+        const json = await res.json() as { token?: string; refreshToken?: string; expiresIn?: number; message?: string };
+        if (!res.ok || !json.token) throw new Error(json.message ?? "Je Magister-sessie is verlopen. Log opnieuw in.");
+        token = json.token;
+        setState((s) => ({
+          ...s,
+          connection: {
+            ...s.connection,
+            magisterToken: token,
+            magisterRefreshToken: json.refreshToken ?? s.connection.magisterRefreshToken,
+            magisterExpiresAt: Date.now() + (json.expiresIn ?? 3600) * 1000,
+          },
+        }));
+      }
+
+      const result = await fetchLiveData({
+        magisterToken: token,
+        magisterSchool: connection.magisterSchool,
+        zermeloSubdomain: connection.zermeloSubdomain,
+        zermeloToken: connection.zermeloToken,
+      });
+      setLiveData(result.data);
+      setLastSync(new Date());
+      setState((s) => ({
+        ...s,
+        connection: {
+          ...s.connection,
+          name: result.name || s.connection.name,
+          school: result.school || s.connection.school,
+        },
+      }));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Kon de schoolgegevens niet laden.");
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || !state.connection.magisterToken) return;
+    void refresh();
+    // Alleen opnieuw laden wanneer de token verandert (niet bij elke profielpatch).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, state.connection.magisterToken, refresh]);
+
   const data = useMemo<AppData>(() => {
-    const grades = [...demoData.grades, ...state.fakeGrades];
+    const grades = [...liveData.grades, ...state.fakeGrades];
     const homework = [
-      ...demoData.homework.map((h) => ({
+      ...liveData.homework.map((h) => ({
         ...h,
         status: state.homework[h.id] ?? h.status,
         subtasks: [...h.subtasks, ...(state.extraSubtasks[h.id] ?? [])].map((st) => ({ ...st, done: state.subtasks[h.id]?.includes(st.id) ?? st.done })),
@@ -149,29 +222,31 @@ export function Providers({ children }: { children: React.ReactNode }) {
       ...state.customHomework,
     ];
     const messages = [
-      ...demoData.messages.map((m) => ({ ...m, read: m.read || state.seenIds.includes(m.id) })),
+      ...liveData.messages.map((m) => ({ ...m, read: m.read || state.seenIds.includes(m.id) })),
       ...state.messages,
     ];
-    const eloAssignments = demoData.eloAssignments.map((e) => ({ ...e, status: state.eloStatus[e.id] ?? e.status }));
-    return { ...demoData, grades, homework, messages, eloAssignments };
-  }, [state.fakeGrades, state.homework, state.subtasks, state.extraSubtasks, state.homeworkNotes, state.customHomework, state.messages, state.seenIds, state.eloStatus]);
+    const eloAssignments = liveData.eloAssignments.map(
+      (e) => ({ ...e, status: state.eloStatus[e.id] ?? e.status })
+    );
+    return { ...liveData, grades, homework, messages, eloAssignments };
+  }, [liveData, state.fakeGrades, state.homework, state.subtasks, state.extraSubtasks, state.homeworkNotes, state.customHomework, state.messages, state.seenIds, state.eloStatus]);
 
-  /** Keuzegroepen met live bijgewerkte bezetting op basis van lokale inschrijvingen. */
+  /** Keuzegroepen met actuele bezetting op basis van lokale inschrijvingen. */
   const choiceGroups = useMemo<ChoiceGroup[]>(() => {
     const chosen = new Set(Object.values(state.enrollments));
     const chosenGroups = new Set(Object.keys(state.enrollments));
-    return demoData.choiceGroups.map((g) => ({
+    return liveData.choiceGroups.map((g) => ({
       ...g,
       options: g.options.map((o) => ({
         ...o,
-        enrolled: o.enrolled + (chosen.has(o.id) ? 1 : 0) + (chosenGroups.has(g.id) && !chosen.has(o.id) ? -1 : 0),
+        enrolled: Math.max(0, o.enrolled + (chosen.has(o.id) ? 1 : 0) + (chosenGroups.has(g.id) && !chosen.has(o.id) ? -1 : 0)),
       })),
     }));
-  }, [state.enrollments]);
+  }, [liveData.choiceGroups, state.enrollments]);
 
   const appointments = useMemo<Appointment[]>(() => {
     const extra: Appointment[] = Object.entries(state.enrollments).flatMap(([groupId, optionId]) => {
-      const group = demoData.choiceGroups.find((g) => g.id === groupId);
+      const group = liveData.choiceGroups.find((g) => g.id === groupId);
       const option = group?.options.find((o) => o.id === optionId);
       if (!group || !option) return [];
       return [{
@@ -187,15 +262,27 @@ export function Providers({ children }: { children: React.ReactNode }) {
         kwtGroupId: groupId,
       }];
     });
-    return [...demoData.appointments, ...extra].sort((a, b) => a.start.localeCompare(b.start));
-  }, [state.enrollments]);
+    return [...liveData.appointments, ...extra].sort((a, b) => a.start.localeCompare(b.start));
+  }, [liveData.appointments, liveData.choiceGroups, state.enrollments]);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    setState({ ...defaultState, theme: state.theme, accent: state.accent });
+    setLiveData(emptyAppData());
+    window.location.assign("/login");
+  }, [state.theme, state.accent]);
+
+  const resetLocalData = useCallback(() => {
+    setState((s) => ({
+      ...s,
+      enrollments: {}, homework: {}, subtasks: {}, extraSubtasks: {}, homeworkNotes: {},
+      customHomework: [], messages: [], sentMessages: [], notes: {}, eloStatus: {},
+      blockedSlots: [], focusSessions: [], completedChores: [], fakeGrades: [], seenIds: [],
+    }));
+  }, []);
 
   const value: AppContextValue = {
-    mounted,
-    now,
-    state,
-    patch,
-    data,
+    mounted, now, state, patch, data, loading, loadError, lastSync, refresh, logout, resetLocalData,
     setTheme: (theme) => patch({ theme }),
     setAccent: (accent) => patch({ accent }),
     enroll: (groupId, optionId) => patch({ enrollments: { ...state.enrollments, [groupId]: optionId } }),
@@ -254,7 +341,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
     appointments,
     toggleSidebar: () => patch({ sidebarCollapsed: !state.sidebarCollapsed }),
     markChore: (id) => patch({ completedChores: [...new Set([...state.completedChores, id])] }),
-    resetDemo: () => setState(defaultState),
   };
 
   if (!mounted) {

@@ -28,7 +28,7 @@ function ScheduleView() {
   const [kwtGroup, setKwtGroup] = useState<ChoiceGroup | null>(null);
   const [addOpen, setAddOpen] = useState(params.get("add") === "1");
   const [newTitle, setNewTitle] = useState("");
-  const [newSubject, setNewSubject] = useState(data.subjects[0].id);
+  const [newSubject, setNewSubject] = useState(data.subjects[0]?.id ?? "");
   const [newDate, setNewDate] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
   const [customTests, setCustomTests] = useState<Appointment[]>([]);
 
@@ -112,7 +112,7 @@ function ScheduleView() {
 
       {/* KWT-blokken */}
       <section>
-        <div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-accent" /><h2 className="section-title">Openstaande Zermelo-keuzelessen</h2><Pill tone="accent">{state.connection.mode === "demo" ? "Demo" : "Live"}</Pill></div>
+        <div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-accent" /><h2 className="section-title">Openstaande Zermelo-keuzelessen</h2><Pill tone="green">Live</Pill></div>
         <div className="grid gap-3 md:grid-cols-3">
           {data.choiceGroups.map((g) => {
             const chosen = state.enrollments[g.id] ? g.options.find((o) => o.id === state.enrollments[g.id]) : null;

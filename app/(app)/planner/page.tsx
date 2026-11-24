@@ -28,7 +28,7 @@ function PlannerView() {
   const [addOpen, setAddOpen] = useState(params.get("add") === "1");
   const [blockOpen, setBlockOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [subjectId, setSubjectId] = useState(data.subjects[0].id);
+  const [subjectId, setSubjectId] = useState(data.subjects[0]?.id ?? "");
   const [due, setDue] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
   const [blockLabel, setBlockLabel] = useState("Sport");
   const [blockDate, setBlockDate] = useState(new Date().toISOString().slice(0, 10));

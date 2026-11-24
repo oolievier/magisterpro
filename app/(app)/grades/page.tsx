@@ -28,7 +28,7 @@ function GradesView() {
   const tabParam = params.get("tab");
   const [tab, setTab] = useState(tabParam ?? "overview");
   const [detailId, setDetailId] = useState<string | null>(params.get("subject"));
-  const [calcSubject, setCalcSubject] = useState(params.get("subject") ?? data.subjects[0].id);
+  const [calcSubject, setCalcSubject] = useState(params.get("subject") ?? data.subjects[0]?.id ?? "");
 
   useEffect(() => {
     if (params.get("tab")) setTab(params.get("tab")!);

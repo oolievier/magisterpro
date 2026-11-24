@@ -200,11 +200,15 @@ export interface SchoolYearStats {
 }
 
 export interface ConnectionSettings {
-  mode: "demo" | "live";
-  magisterSubdomain: string;
+  /** Volledige school-host, bijv. "school.magister.net". */
+  magisterSchool: string;
   magisterToken: string;
+  magisterRefreshToken: string;
+  magisterExpiresAt: number;
+  /** Optioneel: een door de school geregistreerde OAuth-webclient. */
+  magisterClientId: string;
+  magisterRedirectUri: string;
   zermeloSubdomain: string;
-  zermeloCode: string;
   zermeloToken: string;
   level: EducationLevel;
   name: string;

@@ -15,12 +15,12 @@ Een "Student Operating System" voor Nederlandse middelbare scholieren: een moder
 
 ## Koppeling
 
-De app draait standaard in een rijke 5 VWO **demo-sandbox**. Via `/settings` kan je overschakelen naar live data:
+Er is **geen demo-modus**: de app begint op `/login` en toont uitsluitend echte schoolgegevens.
 
-- **Magister v6** — subdomain + bearer token (OAuth2 PKCE-flow aanwezig).
-- **Zermelo v3** — subdomain + 12-cijferige koppelingscode die via de proxy naar een `access_token` wordt omgezet.
+- **Magister** — log in met je school (`*.magister.net`), gebruikersnaam en wachtwoord via de officiële Magister-schoollogin. Geavanceerd: een door de school geregistreerde OAuth-webclient met PKCE (`/auth/callback`) kan ook worden gebruikt. Het access_token wordt na het inloggen opgehaald en indien mogelijk vernieuwd via `refresh_token`.
+- **Zermelo** — optioneel koppelen met de 12-cijferige koppelingscode uit de Zermelo-portal; die wordt via `/api/auth/zermelo` omgezet naar een access_token. Daarmee werken keuzelessen (KWT), roosterwijzigingen en live bezetting.
 
-Alle API-calls gaan via server-side CORS-proxy's (`/api/magister/[...path]` en `/api/zermelo/[...path]`). Tokens worden alleen als request-header meegestuurd en blijven in de browser.
+Alle API-calls gaan via server-side CORS-proxy's (`/api/magister/[...path]` en `/api/zermelo/[...path]`) en via `/api/auth/...` voor de login. Tokens worden alleen als request-header meegestuurd en blijven in de browser (`localStorage`). Zonder koppeling is er geen data zichtbaar.
 
 ## Techniek
 

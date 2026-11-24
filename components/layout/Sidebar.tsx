@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard, GraduationCap, CalendarDays, ClipboardCheck, ListTodo,
   BookOpenText, MessageSquareText, ShieldCheck, Settings2, PanelLeftClose,
-  PanelLeftOpen, Zap, ChevronDown, Radio, Database,
+  PanelLeftOpen, Zap, ChevronDown, Radio,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
 
@@ -23,7 +23,7 @@ export const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { state, toggleSidebar, data, patch } = useApp();
+  const { state, toggleSidebar, data } = useApp();
   const collapsed = state.sidebarCollapsed;
   const unread = data.messages.filter((m) => !m.read).length;
 
@@ -59,30 +59,22 @@ export function Sidebar() {
         </button>
       )}
 
-      <button
-        onClick={() => patch({ connection: { ...state.connection, mode: state.connection.mode === "demo" ? "live" : "demo" } })}
-        className={`mx-3 mb-4 flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition ${collapsed ? "justify-center" : ""} ${
-          state.connection.mode === "demo"
-            ? "border-amber-400/30 bg-amber-400/10 hover:bg-amber-400/15"
-            : "border-emerald-400/30 bg-emerald-400/10 hover:bg-emerald-400/15"
-        }`}
-        title={state.connection.mode === "demo" ? "Demo Sandbox — klik voor Live" : "Live koppeling — klik voor Demo"}
+      <Link
+        href="/settings"
+        className={`mx-3 mb-4 flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-2 text-left transition hover:bg-emerald-400/15 ${collapsed ? "justify-center" : ""}`}
+        title="Live koppeling — beheren in Instellingen"
       >
-        {state.connection.mode === "demo" ? <Database size={15} className="shrink-0 text-amber-400" /> : <Radio size={15} className="shrink-0 text-emerald-400" />}
+        <Radio size={15} className="shrink-0 text-emerald-400" />
         {!collapsed && (
           <>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[11px] font-bold text-slate-800 dark:text-white/90">
-                {state.connection.mode === "demo" ? "DEMO SANDBOX" : "LIVE MAGISTER + ZERMELO"}
-              </span>
-              <span className="block truncate text-[9px] text-slate-500 dark:text-white/40">
-                {state.connection.mode === "demo" ? "Rijke oefenomgeving" : state.connection.school}
-              </span>
+              <span className="block truncate text-[11px] font-bold text-slate-800 dark:text-white/90">LIVE MAGISTER + ZERMELO</span>
+              <span className="block truncate text-[9px] text-slate-500 dark:text-white/40">{state.connection.school || "Schoolkoppeling"}</span>
             </span>
             <ChevronDown size={13} className="shrink-0 text-slate-400" />
           </>
         )}
-      </button>
+      </Link>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
         {!collapsed && <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-white/25">Werkplek</p>}

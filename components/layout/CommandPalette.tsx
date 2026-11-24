@@ -81,13 +81,15 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             toast("Deze keuzeles is vol", "warning");
             return;
           }
-          if (state.connection.mode === "live" && state.connection.zermeloToken) {
-            const res = await zermelo.enroll(
-              { subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken },
-              g.id, o.id
-            );
-            if (!res.ok) { toast("Zermelo inschrijving mislukt", "warning", res.error); return; }
+          if (!state.connection.zermeloToken) {
+            toast("Zermelo niet gekoppeld", "warning", "Koppel eerst je Zermelo-account via Instellingen.");
+            return;
           }
+          const res = await zermelo.enroll(
+            { subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken },
+            g.id, o.id
+          );
+          if (!res.ok) { toast("Zermelo inschrijving mislukt", "warning", res.error); return; }
           enroll(g.id, o.id);
           toast("Ingeschreven via Zermelo", "success", o.title);
           go("/schedule");

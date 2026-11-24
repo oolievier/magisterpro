@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Loader2, AlertTriangle } from "lucide-react";
 import { useApp } from "@/app/providers";
+import { MAGISTER_AUTH_STORAGE_KEY } from "@/lib/api/magister";
 
 interface PendingOAuth {
   verifier: string;
   state: string;
+  nonce: string;
   clientId: string;
   redirectUri: string;
   school: string;
@@ -27,19 +29,24 @@ export default function AuthCallbackPage() {
     started.current = true;
 
     const run = async () => {
-      const queryError = params.get("error") ?? params.get("error_description");
+      const hash = typeof window !== "undefined" ? new URLSearchParams(window.location.hash.slice(1)) : new URLSearchParams();
+      const queryError = params.get("error") ?? hash.get("error");
       if (queryError) { setError(queryError); return; }
 
-      const raw = sessionStorage.getItem("magisterpro-oauth");
-      if (!raw) { setError("De OAuth-sessie is verlopen. Start de aanmelding opnieuw."); return; }
+      const raw = sessionStorage.getItem(MAGISTER_AUTH_STORAGE_KEY);
+      if (!raw) { setError("De OAuth-sessie is verlopen of deze pagina is in een ander venster geopend. Start opnieuw in het oorspronkelijke venster."); return; }
       let pending: PendingOAuth;
       try { pending = JSON.parse(raw) as PendingOAuth; } catch { setError("Ongeldige OAuth-sessie."); return; }
 
-      const code = params.get("code");
-      const returnedState = params.get("state");
+      const code = params.get("code") ?? hash.get("code");
+      const returnedState = params.get("state") ?? hash.get("state");
       if (!code) { setError("Geen autorisatiecode ontvangen van Magister."); return; }
-      if (returnedState && returnedState !== pending.state) {
+      if (!returnedState || returnedState !== pending.state) {
         setError("De OAuth-state komt niet overeen. Start opnieuw om veiligheidsredenen.");
+        return;
+      }
+      if (!pending.verifier || !pending.clientId || !pending.redirectUri) {
+        setError("De OAuth-sessie is onvolledig. Start opnieuw.");
         return;
       }
 
@@ -48,18 +55,20 @@ export default function AuthCallbackPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            grant: "code", code,
+            grant: "code",
+            code,
             verifier: pending.verifier,
-            redirectUri: pending.redirectUri,
             clientId: pending.clientId,
+            redirectUri: pending.redirectUri,
           }),
         });
         const json = await res.json() as { token?: string; refreshToken?: string; expiresIn?: number; message?: string };
         if (!res.ok || !json.token) throw new Error(json.message ?? "Omwisselen van de code mislukt.");
+
         patch({
           connection: {
             ...state.connection,
-            magisterSchool: pending.school,
+            magisterSchool: pending.school || state.connection.magisterSchool,
             magisterToken: json.token,
             magisterRefreshToken: json.refreshToken ?? "",
             magisterExpiresAt: Date.now() + (json.expiresIn ?? 3600) * 1000,
@@ -67,7 +76,7 @@ export default function AuthCallbackPage() {
             magisterRedirectUri: pending.redirectUri,
           },
         });
-        sessionStorage.removeItem("magisterpro-oauth");
+        sessionStorage.removeItem(MAGISTER_AUTH_STORAGE_KEY);
         setDone(true);
         router.replace("/dashboard");
       } catch (e) {

@@ -17,10 +17,23 @@ Een "Student Operating System" voor Nederlandse middelbare scholieren: een moder
 
 Er is **geen demo-modus**: de app begint op `/login` en toont uitsluitend echte schoolgegevens.
 
-- **Magister** — log in met je school (`*.magister.net`), gebruikersnaam en wachtwoord via de officiële Magister-schoollogin. Geavanceerd: een door de school geregistreerde OAuth-webclient met PKCE (`/auth/callback`) kan ook worden gebruikt. Het access_token wordt na het inloggen opgehaald en indien mogelijk vernieuwd via `refresh_token`.
+- **Magister** — standaard OAuth2 met PKCE via een eigen, bij Magister geregistreerde webclient. Je wordt doorgestuurd naar `accounts.magister.net` en logt daar in; MagisterPro vraagt nooit naar je wachtwoord. De code komt terug op `/auth/callback` en wordt server-side omgewisseld voor een access_token en refresh_token.
 - **Zermelo** — optioneel koppelen met de 12-cijferige koppelingscode uit de Zermelo-portal; die wordt via `/api/auth/zermelo` omgezet naar een access_token. Daarmee werken keuzelessen (KWT), roosterwijzigingen en live bezetting.
 
 Alle API-calls gaan via server-side CORS-proxy's (`/api/magister/[...path]` en `/api/zermelo/[...path]`) en via `/api/auth/...` voor de login. Tokens worden alleen als request-header meegestuurd en blijven in de browser (`localStorage`). Zonder koppeling is er geen data zichtbaar.
+
+### Magister OAuth-client instellen
+
+Een browser kan de app-scheme-redirect van de publieke Magister-appclient (`m6loapp://oauth2redirect/`) niet opvangen. Daarom is een geregistreerde client met een HTTPS-callback nodig. Kopieer `.env.example` naar `.env.local` (of zet de variabelen in Vercel) en vul in:
+
+| Variabele | Verplicht | Standaard |
+| --- | --- | --- |
+| `NEXT_PUBLIC_MAGISTER_CLIENT_ID` | ja | — |
+| `NEXT_PUBLIC_MAGISTER_REDIRECT_URI` | nee | `{origin}/auth/callback` |
+| `NEXT_PUBLIC_MAGISTER_SCOPES` | nee | `openid profile offline_access attendance.overview calendar.user grades.read` |
+| `NEXT_PUBLIC_MAGISTER_RESPONSE_TYPE` | nee | `code` |
+
+Registreer exact de redirect-URI uit de tweede rij bij je Magister-contactpersoon. Voor de productie-opzet is dat `https://magisterpro.vercel.app/auth/callback`. Is de client confidential, zet dan ook `MAGISTER_CLIENT_SECRET` (alleen server-side). Zonder client-id toont de loginpagina een duidelijke configuratiemelding; de Zermelo-koppeling blijft bruikbaar.
 
 ## Techniek
 

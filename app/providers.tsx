@@ -162,7 +162,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({
             grant: "refresh",
             refreshToken: connection.magisterRefreshToken,
-            clientId: connection.magisterClientId || "M6LOAPP",
+            clientId: connection.magisterClientId || undefined,
           }),
         });
         const json = await res.json() as { token?: string; refreshToken?: string; expiresIn?: number; message?: string };

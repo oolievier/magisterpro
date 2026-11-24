@@ -161,8 +161,44 @@ export const magister = {
 };
 
 /* ---------------------------------------------------------------------------
- * OAuth2 PKCE-hulp voor een door de school geregistreerde webclient.
+ * OAuth2/PKCE voor een eigen, bij Magister geregistreerde webclient.
+ *
+ * De leerling logt in op accounts.magister.net. MagisterPro ziet nooit een
+ * wachtwoord: de autorisatiecode komt terug op onze HTTPS-callback en wordt
+ * daar server-side omgewisseld voor een access_token + refresh_token.
+ *
+ * Instellen met omgevingsvariabelen (zie .env.example):
+ *   NEXT_PUBLIC_MAGISTER_CLIENT_ID    verplicht
+ *   NEXT_PUBLIC_MAGISTER_REDIRECT_URI optioneel, standaard {origin}/auth/callback
+ *   NEXT_PUBLIC_MAGISTER_SCOPES       optioneel
+ *   NEXT_PUBLIC_MAGISTER_RESPONSE_TYPE optioneel, standaard "code"
  * ------------------------------------------------------------------------- */
+export const MAGISTER_AUTH_STORAGE_KEY = "magisterpro-oauth";
+
+export function getMagisterClientId(): string {
+  return process.env.NEXT_PUBLIC_MAGISTER_CLIENT_ID?.trim() || "";
+}
+
+export function getMagisterRedirectUri(): string {
+  const configured = process.env.NEXT_PUBLIC_MAGISTER_REDIRECT_URI?.trim();
+  if (configured) return configured;
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}/auth/callback`;
+}
+
+export function getMagisterScopes(): string {
+  return process.env.NEXT_PUBLIC_MAGISTER_SCOPES?.trim()
+    || "openid profile offline_access attendance.overview calendar.user grades.read";
+}
+
+export function getMagisterResponseType(): string {
+  return process.env.NEXT_PUBLIC_MAGISTER_RESPONSE_TYPE?.trim() || "code";
+}
+
+export function isMagisterOAuthConfigured(): boolean {
+  return getMagisterClientId().length > 0;
+}
+
 export function createPkceVerifier(length = 64): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
   const bytes = new Uint8Array(length);
@@ -179,21 +215,21 @@ export async function pkceChallenge(verifier: string): Promise<string> {
 }
 
 export interface MagisterAuthOptions {
-  clientId: string;
-  redirectUri: string;
   verifier: string;
   challenge: string;
   state: string;
   nonce: string;
   school?: string;
+  clientId: string;
+  redirectUri: string;
 }
 
 export function magisterAuthUrl(opts: MagisterAuthOptions): string {
   const q = new URLSearchParams({
-    response_type: "code",
+    response_type: getMagisterResponseType(),
     client_id: opts.clientId,
     redirect_uri: opts.redirectUri,
-    scope: "openid profile offline_access magister.mobile magister.ecs",
+    scope: getMagisterScopes(),
     code_challenge: opts.challenge,
     code_challenge_method: "S256",
     state: opts.state,

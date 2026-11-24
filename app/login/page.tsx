@@ -4,11 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  ArrowRight, GraduationCap, KeyRound, Link2, Loader2, LockKeyhole, Radio,
-  ShieldCheck, Sparkles, Zap,
+  ArrowRight, GraduationCap, Link2, Loader2, Radio, Settings2, ShieldCheck, Sparkles, Zap,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
-import { magisterAuthUrl, createPkceVerifier, pkceChallenge, normalizeMagisterHost } from "@/lib/api/magister";
+import {
+  MAGISTER_AUTH_STORAGE_KEY, createPkceVerifier, getMagisterClientId,
+  getMagisterRedirectUri, isMagisterOAuthConfigured, magisterAuthUrl,
+  normalizeMagisterHost, pkceChallenge,
+} from "@/lib/api/magister";
 import { exchangeZermeloCode, normalizeZermeloSubdomain } from "@/lib/api/zermelo";
 import { toast } from "@/components/ui/Toaster";
 
@@ -19,78 +22,40 @@ export default function LoginPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("magister");
   const [school, setSchool] = useState(state.connection.magisterSchool.replace(/\.magister\.net$/, ""));
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [zSchool, setZSchool] = useState(state.connection.zermeloSubdomain);
   const [code, setCode] = useState("");
-  const [clientId, setClientId] = useState(state.connection.magisterClientId);
-  const [redirectUri, setRedirectUri] = useState(state.connection.magisterRedirectUri || (typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : ""));
-  const [showOAuth, setShowOAuth] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const finish = () => {
-    toast("Succesvol ingelogd", "success", "Live schoolgegevens worden geladen…");
-    void refresh();
-    router.push("/dashboard");
-  };
+  const configured = isMagisterOAuthConfigured();
+  const redirectUri = getMagisterRedirectUri();
 
-  const loginMagister = async () => {
+  const startMagisterLogin = async () => {
     setError("");
+    const clientId = getMagisterClientId();
+    if (!clientId) {
+      setError("De Magister-client is nog niet ingesteld. Vraag je beheerder om NEXT_PUBLIC_MAGISTER_CLIENT_ID te configureren.");
+      return;
+    }
     setBusy(true);
     try {
-      const host = normalizeMagisterHost(school);
-      const res = await fetch("/api/auth/magister", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ school: host, username, password }),
-      });
-      const json = await res.json() as { token?: string; expiresIn?: number; message?: string };
-      if (!res.ok || !json.token) throw new Error(json.message ?? "Inloggen bij Magister mislukt.");
-      patch({
-        connection: {
-          ...state.connection,
-          magisterSchool: host,
-          magisterToken: json.token,
-          magisterRefreshToken: "",
-          magisterExpiresAt: Date.now() + (json.expiresIn ?? 3600) * 1000,
-          name: state.connection.name || username,
-          school: state.connection.school || host.replace(/\.magister\.net$/, ""),
-        },
-      });
-      setPassword("");
-      finish();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Inloggen bij Magister mislukt.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const startOAuth = async () => {
-    setError("");
-    try {
-      const host = normalizeMagisterHost(school);
       const verifier = createPkceVerifier();
       const challenge = await pkceChallenge(verifier);
       const oauthState = createPkceVerifier(32);
       const nonce = createPkceVerifier(32);
-      sessionStorage.setItem("magisterpro-oauth", JSON.stringify({
-        verifier, state: oauthState, clientId, redirectUri, school: host,
+      const tenant = school.trim() ? normalizeMagisterHost(school) : "";
+
+      sessionStorage.setItem(MAGISTER_AUTH_STORAGE_KEY, JSON.stringify({
+        verifier, state: oauthState, nonce, school: tenant, clientId, redirectUri,
       }));
-      patch({
-        connection: {
-          ...state.connection,
-          magisterSchool: host,
-          magisterClientId: clientId,
-          magisterRedirectUri: redirectUri,
-        },
-      });
+
       window.location.assign(magisterAuthUrl({
-        clientId, redirectUri, verifier, challenge, state: oauthState, nonce, school: host,
+        verifier, challenge, state: oauthState, nonce,
+        school: tenant || undefined, clientId, redirectUri,
       }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Kon de OAuth-flow niet starten.");
+      setBusy(false);
+      setError(e instanceof Error ? e.message : "Kon de Magister-aanmelding niet starten.");
     }
   };
 
@@ -117,6 +82,12 @@ export default function LoginPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const finish = () => {
+    toast("Succesvol ingelogd", "success", "Live schoolgegevens worden geladen…");
+    void refresh();
+    router.push("/dashboard");
   };
 
   return (
@@ -173,40 +144,46 @@ export default function LoginPage() {
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
                 <div>
                   <h2 className="text-lg font-bold">Inloggen met Magister</h2>
-                  <p className="mt-1 text-[11px] text-white/40">We sturen je via de officiële Magister-schoollogin. Je wachtwoord wordt niet opgeslagen.</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-white/40">
+                    Je logt in op de officiële Magister-website. MagisterPro vraagt nooit naar je wachtwoord en slaat het ook niet op.
+                  </p>
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-[11px] font-semibold text-white/60">School</label>
+                  <label className="mb-1.5 block text-[11px] font-semibold text-white/60">School <span className="font-normal text-white/30">(optioneel)</span></label>
                   <div className="flex items-center gap-2">
-                    <input className="input mono flex-1" value={school} onChange={(e) => setSchool(e.target.value)} placeholder="schoolnaam" autoComplete="organization" />
+                    <input
+                      className="input mono flex-1"
+                      value={school}
+                      onChange={(e) => setSchool(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") void startMagisterLogin(); }}
+                      placeholder="schoolnaam"
+                      autoComplete="organization"
+                    />
                     <span className="shrink-0 text-[11px] text-white/35">.magister.net</span>
                   </div>
+                  <p className="mt-1.5 text-[10px] text-white/30">Laat leeg om de schoolkeuze aan Magister over te laten.</p>
                 </div>
-                <div>
-                  <label className="mb-1.5 block text-[11px] font-semibold text-white/60">Gebruikersnaam</label>
-                  <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Je Magister-gebruikersnaam" autoComplete="username" />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-[11px] font-semibold text-white/60">Wachtwoord</label>
-                  <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void loginMagister(); }} placeholder="••••••••" autoComplete="current-password" />
-                </div>
-                <button onClick={() => void loginMagister()} disabled={busy || !school || !username || !password} className="btn-primary w-full justify-center !py-3">
-                  {busy ? <Loader2 size={15} className="animate-spin" /> : <LockKeyhole size={15} />} Inloggen via school
+                <button
+                  onClick={() => void startMagisterLogin()}
+                  disabled={busy || !configured}
+                  className="btn-primary w-full justify-center !py-3"
+                >
+                  {busy ? <Loader2 size={15} className="animate-spin" /> : <GraduationCap size={15} />}
+                  {busy ? "Doorsturen naar Magister…" : "Inloggen via Magister"}
                 </button>
-
-                <button onClick={() => setShowOAuth(!showOAuth)} className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-300 hover:underline">
-                  <KeyRound size={12} /> {showOAuth ? "Verberg" : "Gebruik eigen OAuth-webclient (gevorderd)"}
-                </button>
-                {showOAuth && (
-                  <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <p className="text-[10px] leading-relaxed text-white/45">
-                      Heeft je school een geregistreerde OAuth-client met een web-redirect? Vul dan de client_id en redirect_uri in. Anders gebruik je hierboven de school-login.
-                    </p>
-                    <input className="input mono" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="client_id" />
-                    <input className="input mono" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="https://…/auth/callback" />
-                    <button onClick={() => void startOAuth()} disabled={!clientId || !redirectUri || !school} className="btn-secondary w-full justify-center"><ArrowRight size={14} /> Start OAuth-aanmelding</button>
+                {!configured && (
+                  <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-[10px] leading-relaxed text-amber-200/80">
+                    <Settings2 size={14} className="mt-0.5 shrink-0" />
+                    <span>
+                      De OAuth-client is nog niet geconfigureerd. Stel <code className="mono">NEXT_PUBLIC_MAGISTER_CLIENT_ID</code> in en registreer
+                      <code className="mono"> {redirectUri} </code> als redirect-URI bij Magister.
+                    </span>
                   </div>
                 )}
+                <div className="flex items-start gap-2 rounded-xl bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/40">
+                  <ShieldCheck size={14} className="mt-0.5 shrink-0 text-emerald-400" />
+                  Je wordt doorgestuurd naar accounts.magister.net. Voer je gegevens alleen daar in; daarna keren we automatisch terug naar deze app.
+                </div>
               </motion.div>
             ) : (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">

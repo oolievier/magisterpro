@@ -33,7 +33,9 @@ Een browser kan de app-scheme-redirect van de publieke Magister-appclient (`m6lo
 | `NEXT_PUBLIC_MAGISTER_SCOPES` | nee | `openid profile offline_access attendance.overview calendar.user grades.read` |
 | `NEXT_PUBLIC_MAGISTER_RESPONSE_TYPE` | nee | `code` |
 
-Registreer exact de redirect-URI uit de tweede rij bij je Magister-contactpersoon. Voor de productie-opzet is dat `https://magisterpro.vercel.app/auth/callback`. Is de client confidential, zet dan ook `MAGISTER_CLIENT_SECRET` (alleen server-side). Zonder client-id toont de loginpagina een duidelijke configuratiemelding; de Zermelo-koppeling blijft bruikbaar.
+Registreer exact de redirect-URI uit de tweede rij bij je Magister-contactpersoon. Voor de productie-opzet is dat `https://magisterpro.vercel.app/auth/callback`. Vraag daarbij om: `response_type=code`, `grant_types=authorization_code,refresh_token`, PKCE met `S256` en de scopes uit de tabel. Is de client confidential, zet dan ook `MAGISTER_CLIENT_SECRET` (alleen server-side). Zonder client-id toont de loginpagina een duidelijke configuratiemelding; de Zermelo-koppeling blijft bruikbaar.
+
+Magister biedt geen publieke self-service registratie (er is geen `registration_endpoint` in de OIDC-discovery). Een client moet dus via de school ICT-afdeling of Schoolmaster/Magister worden aangevraagd. De eerder gebruikte publieke appclient `M6LOAPP` werkt alleen met het app-scheme `m6loapp://oauth2redirect/`, dat een browser niet kan opvangen.
 
 ## Techniek
 

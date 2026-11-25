@@ -61,9 +61,11 @@ async function request<T>(
 }
 
 export interface ZermeloTokenResponse {
-  access_token: string;
+  access_token?: string;
+  token?: string;
   token_type?: string;
   expires_in?: number;
+  expiresIn?: number;
 }
 
 /** Wisselt de 12-cijferige koppelingscode om via de eigen serverroute. */

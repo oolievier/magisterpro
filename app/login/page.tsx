@@ -16,7 +16,7 @@ import {
   MAGISTER_NATIVE_STORAGE_KEY, MAGISTER_REDIRECT_URI,
   type MagisterAuthResult,
 } from "@/lib/native/magister-auth";
-import { toast } from "@/components/ui/Toaster";
+import { Toaster, toast } from "@/components/ui/Toaster";
 
 type Tab = "magister" | "zermelo";
 type QrPhase = "idle" | "initiating" | "pending" | "expired" | "success";
@@ -260,7 +260,9 @@ export default function LoginPage() {
       const res = await exchangeZermeloCode(zSchool, code);
       if (!res.ok || !res.data) throw new Error(res.error ?? "Zermelo-koppeling mislukt.");
       const subdomain = normalizeZermeloSubdomain(zSchool);
-      patch({ connection: { ...connectionRef.current, zermeloSubdomain: subdomain, zermeloToken: res.data.access_token } });
+      const token = res.data.access_token || res.data.token || "";
+      if (!token) throw new Error("Zermelo gaf geen access_token terug.");
+      patch({ connection: { ...connectionRef.current, zermeloSubdomain: subdomain, zermeloToken: token } });
       toast("Zermelo gekoppeld", "success", "Je keuzelessen en roosterwijzigingen worden geladen.");
       setCode("");
       if (connectionRef.current.magisterToken) router.push("/dashboard");
@@ -351,6 +353,7 @@ export default function LoginPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0a0a0f] px-4 py-10 text-white">
+      <Toaster />
       <div className="pointer-events-none absolute -left-32 top-0 h-[520px] w-[520px] rounded-full bg-indigo-600/20 blur-[120px]" />
       <div className="pointer-events-none absolute -right-40 bottom-0 h-[520px] w-[520px] rounded-full bg-cyan-500/10 blur-[130px]" />
 

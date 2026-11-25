@@ -240,6 +240,21 @@ export default function LoginPage() {
                         wacht op scan
                       </span>
                     </div>
+                    <button
+                      onClick={() => {
+                        window.location.href = `discipulus://login?requestId=${encodeURIComponent(requestId)}&backendUrl=${encodeURIComponent(window.location.origin)}&requireRefreshToken=true`;
+                      }}
+                      className="btn-secondary mt-4 w-full justify-center !py-2 text-[11px]"
+                    >
+                      <Smartphone size={13} /> Open Discipulus-app
+                    </button>
+                    <p className="mt-2 text-[10px] text-white/30">
+                      Op je telefoon opent dit de app direct. Anders: scan de QR met Discipulus → Instellingen → Overig → Login met Discipulus.
+                      {" "}Geen app? {" "}
+                      <a className="text-indigo-300 underline" href="https://apps.apple.com/nl/app/discipulus/id6478711986" target="_blank" rel="noreferrer">iOS</a>
+                      {" · "}
+                      <a className="text-indigo-300 underline" href="https://play.google.com/store/apps/details?id=dev.harrydekat.discipulus" target="_blank" rel="noreferrer">Android</a>
+                    </p>
                   </div>
                 )}
 

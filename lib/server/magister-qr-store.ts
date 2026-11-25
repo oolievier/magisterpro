@@ -57,6 +57,7 @@ export async function writeQrSession(session: QrSession): Promise<void> {
       access: "private",
       contentType: "application/json",
       addRandomSuffix: false,
+      allowOverwrite: true,
       cacheControlMaxAge: 0,
     });
     return;

@@ -85,7 +85,13 @@ export default function LoginPage() {
       const json = await res.json() as { requestId?: string; message?: string };
       if (!res.ok || !json.requestId) throw new Error(json.message ?? "Kon de QR-koppeling niet starten.");
 
-      const payload = `https://discipulus.harrydekat.dev/login?requestId=${encodeURIComponent(json.requestId)}&backendUrl=${encodeURIComponent(window.location.origin)}&requireRefreshToken=true`;
+      // Wijst naar onze eigen pagina: gewone camera's openen geen 404 meer,
+      // en Discipulus leest requestId/backendUrl uit elke http(s)-QR-URL.
+      const target = new URL("/discipulus/login", window.location.origin);
+      target.searchParams.set("requestId", json.requestId);
+      target.searchParams.set("backendUrl", window.location.origin);
+      target.searchParams.set("requireRefreshToken", "true");
+      const payload = target.toString();
       const image = await QRCode.toDataURL(payload, {
         width: 280,
         margin: 1,

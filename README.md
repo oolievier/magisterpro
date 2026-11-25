@@ -52,8 +52,8 @@ Op Android kan het systeem een keuzedialog tonen als de officiële Magister-app 
 Buiten de native shell gebruikt MagisterPro de QR-handshake van de open-source [magister-auth-gateway](https://github.com/DiscipulusApp/magister-auth-gateway): de webapp is zelf de tijdelijke gateway-backend.
 
 1. `/api/auth/magister/qr/initiate` maakt een willekeurige `requestId` (5 minuten geldig).
-2. De loginpagina toont een QR-code met `requestId` en de eigen origin als `backendUrl`, plus een knop die via `discipulus://login?requestId=…&backendUrl=…&requireRefreshToken=true` direct de [Discipulus-app](https://github.com/DiscipulusApp/Discipulus) opent.
-3. De companion-app (Discipulus, Android/iOS) voert de echte Magister-OAuth uit en POST de tokens naar `/api/auth/magister/qr/complete`.
+2. De loginpagina toont een QR-code naar `/discipulus/login?requestId=…&backendUrl=…&requireRefreshToken=true` op de eigen origin (geen 404 bij scannen met een gewone camera), plus een knop die via `discipulus://login?...` direct de [Discipulus-app](https://github.com/DiscipulusApp/Discipulus) opent.
+3. De companion-app (Discipulus, Android/iOS) voert de echte Magister-OAuth uit en POST de tokens naar `/api/auth/custom-login/complete` — dezelfde implementatie als `/api/auth/magister/qr/complete`.
 4. De browser poll `/api/auth/magister/qr/status/[requestId]` en slaat de tokens daarna lokaal op.
 5. Verlopen tokens worden via `/api/auth/magister/token` vernieuwd (publieke client `iam-profile`).
 

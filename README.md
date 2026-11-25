@@ -17,25 +17,22 @@ Een "Student Operating System" voor Nederlandse middelbare scholieren: een moder
 
 Er is **geen demo-modus**: de app begint op `/login` en toont uitsluitend echte schoolgegevens.
 
-- **Magister** — standaard OAuth2 met PKCE via een eigen, bij Magister geregistreerde webclient. Je wordt doorgestuurd naar `accounts.magister.net` en logt daar in; MagisterPro vraagt nooit naar je wachtwoord. De code komt terug op `/auth/callback` en wordt server-side omgewisseld voor een access_token en refresh_token.
+- **Magister** — QR-koppeling via de Magister-companion-app (hetzelfde protocol als de open-source auth-gateway). Je scant een tijdelijke QR-code met je telefoon; de app doet de officiële Magister-OAuth en stuurt de tokens naar onze backend. Je wachtwoord komt nooit in MagisterPro terecht en er is geen geregistreerde webclient nodig.
 - **Zermelo** — optioneel koppelen met de 12-cijferige koppelingscode uit de Zermelo-portal; die wordt via `/api/auth/zermelo` omgezet naar een access_token. Daarmee werken keuzelessen (KWT), roosterwijzigingen en live bezetting.
 
 Alle API-calls gaan via server-side CORS-proxy's (`/api/magister/[...path]` en `/api/zermelo/[...path]`) en via `/api/auth/...` voor de login. Tokens worden alleen als request-header meegestuurd en blijven in de browser (`localStorage`). Zonder koppeling is er geen data zichtbaar.
 
-### Magister OAuth-client instellen
+### Magister QR-koppeling
 
-Een browser kan de app-scheme-redirect van de publieke Magister-appclient (`m6loapp://oauth2redirect/`) niet opvangen. Daarom is een geregistreerde client met een HTTPS-callback nodig. Kopieer `.env.example` naar `.env.local` (of zet de variabelen in Vercel) en vul in:
+Een browser kan de app-scheme-redirect van de publieke Magister-appclient (`m6loapp://oauth2redirect/`) niet opvangen. Daarom gebruikt MagisterPro de QR-handshake van de open-source [magister-auth-gateway](https://github.com/DiscipulusApp/magister-auth-gateway): de webapp is zelf de tijdelijke gateway-backend.
 
-| Variabele | Verplicht | Standaard |
-| --- | --- | --- |
-| `NEXT_PUBLIC_MAGISTER_CLIENT_ID` | ja | — |
-| `NEXT_PUBLIC_MAGISTER_REDIRECT_URI` | nee | `{origin}/auth/callback` |
-| `NEXT_PUBLIC_MAGISTER_SCOPES` | nee | `openid profile offline_access attendance.overview calendar.user grades.read` |
-| `NEXT_PUBLIC_MAGISTER_RESPONSE_TYPE` | nee | `code` |
+1. `/api/auth/magister/qr/initiate` maakt een willekeurige `requestId` (5 minuten geldig).
+2. De loginpagina toont een QR-code met `requestId` en de eigen origin als `backendUrl`.
+3. De companion-app voert de echte Magister-OAuth uit en POST de tokens naar `/api/auth/magister/qr/complete`.
+4. De browser poll `/api/auth/magister/qr/status/[requestId]` en slaat de tokens daarna lokaal op.
+5. Verlopen tokens worden via `/api/auth/magister/token` vernieuwd (publieke client `iam-profile`).
 
-Registreer exact de redirect-URI uit de tweede rij bij je Magister-contactpersoon. Voor de productie-opzet is dat `https://magisterpro.vercel.app/auth/callback`. Vraag daarbij om: `response_type=code`, `grant_types=authorization_code,refresh_token`, PKCE met `S256` en de scopes uit de tabel. Is de client confidential, zet dan ook `MAGISTER_CLIENT_SECRET` (alleen server-side). Zonder client-id toont de loginpagina een duidelijke configuratiemelding; de Zermelo-koppeling blijft bruikbaar.
-
-Magister biedt geen publieke self-service registratie (er is geen `registration_endpoint` in de OIDC-discovery). Een client moet dus via de school ICT-afdeling of Schoolmaster/Magister worden aangevraagd. De eerder gebruikte publieke appclient `M6LOAPP` werkt alleen met het app-scheme `m6loapp://oauth2redirect/`, dat een browser niet kan opvangen.
+De koppelsessies leven kort in Vercel Blob (`BLOB_READ_WRITE_TOKEN`, automatisch aan dit project verbonden). Zonder die token gebruikt een lokale ontwikkelomgeving een in-memory opslag. Er is geen extra service of geregistreerde OAuth-client nodig. De QR-code kan alleen worden gescand met een app die dit gateway-protocol ondersteunt.
 
 ## Techniek
 

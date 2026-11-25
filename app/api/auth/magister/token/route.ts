@@ -9,17 +9,12 @@ function expectedRedirectUri(request: NextRequest): string {
     || `${request.nextUrl.origin}/auth/callback`;
 }
 
-/** Wisselt een OAuth-code om voor tokens, of vernieuwt een access_token. */
+/**
+ * Vernieuwt een Magister-token (QR-koppeling) of wisselt een OAuth-code om
+ * voor een geregistreerde webclient.
+ */
 export async function POST(request: NextRequest) {
   try {
-    const configuredClientId = getMagisterClientId();
-    if (!configuredClientId) {
-      return NextResponse.json(
-        { message: "NEXT_PUBLIC_MAGISTER_CLIENT_ID is niet geconfigureerd." },
-        { status: 503 }
-      );
-    }
-
     const body = await request.json() as {
       grant?: "code" | "refresh";
       code?: string;
@@ -29,19 +24,32 @@ export async function POST(request: NextRequest) {
       refreshToken?: string;
     };
 
-    const form = new URLSearchParams({ client_id: configuredClientId });
-    const clientSecret = process.env.MAGISTER_CLIENT_SECRET?.trim();
-    if (clientSecret) form.set("client_secret", clientSecret);
+    const form = new URLSearchParams();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      "User-Agent": "MagisterPro/1.0",
+    };
     let fallbackRefresh = "";
 
     if (body.grant === "refresh") {
       if (!body.refreshToken) {
         return NextResponse.json({ message: "Geen refresh_token beschikbaar." }, { status: 400 });
       }
+      // De QR-koppeling gebruikt dezelfde publieke client als de companion-app.
+      form.set("client_id", body.clientId?.trim() || "iam-profile");
       form.set("grant_type", "refresh_token");
       form.set("refresh_token", body.refreshToken);
+      headers["X-Requested-With"] = "net.magister.iam";
       fallbackRefresh = body.refreshToken;
     } else {
+      const configuredClientId = getMagisterClientId();
+      if (!configuredClientId) {
+        return NextResponse.json(
+          { message: "NEXT_PUBLIC_MAGISTER_CLIENT_ID is niet geconfigureerd." },
+          { status: 503 }
+        );
+      }
       const redirectUri = body.redirectUri?.trim() || "";
       if (!body.code || !body.verifier || !redirectUri) {
         return NextResponse.json({ message: "Ontbrekende OAuth-parameters." }, { status: 400 });
@@ -52,6 +60,9 @@ export async function POST(request: NextRequest) {
       if (redirectUri !== expectedRedirectUri(request)) {
         return NextResponse.json({ message: "Ongeldige redirect-URI voor deze client." }, { status: 400 });
       }
+      form.set("client_id", configuredClientId);
+      const clientSecret = process.env.MAGISTER_CLIENT_SECRET?.trim();
+      if (clientSecret) form.set("client_secret", clientSecret);
       form.set("grant_type", "authorization_code");
       form.set("code", body.code);
       form.set("code_verifier", body.verifier);
@@ -60,11 +71,7 @@ export async function POST(request: NextRequest) {
 
     const res = await fetch("https://accounts.magister.net/connect/token", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-        "User-Agent": "MagisterPro/1.0",
-      },
+      headers,
       body: form,
       cache: "no-store",
     });

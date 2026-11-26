@@ -55,6 +55,7 @@ De map `extension/` bevat een Manifest V3-extensie voor Chrome en Edge. Laad hem
 - De service worker bewaart de laatste echte sessie in `chrome.storage.local` en geeft die aan open MagisterPro-tabbladen door via het `magisterpro:extension-session`-event.
 - Op Magister-pagina's verschijnt een klein paneel met snelkoppelingen naar Command Center, Cijferstudio, Rooster, Planner en Instellingen, plus een subtiele donker/glas-skin die je aan en uit kunt zetten.
 - `app/providers.tsx` neemt de sessie automatisch over. Je hoeft op `/login` niets in te vullen; daarna laden alle modules live data.
+- Extensiesessies worden niet via de algemene tokenendpoint vernieuwd: een accountcenter-`refresh_token` gaf `invalid_grant`. Bij verloping vraagt de app je de echte Magister-pagina te verversen. Instellingen bevat ook een schoolveld als de school niet automatisch herkend wordt.
 
 De extensie is getest met een gesimuleerde oidc-sessie. Een volledige login met een echt schoolaccount kon niet worden geverifieerd omdat daar geen credentials beschikbaar zijn. Firefox gebruikt een ander background-model en vraagt een kleine manifest-aanpassing.
 

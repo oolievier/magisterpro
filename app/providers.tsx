@@ -10,11 +10,27 @@ import type {
 
 const STORAGE_KEY = "magisterpro-state-v2";
 
+/** Vertaalt ruwe Magister/OAuth-fouten naar bruikbare Nederlandse tekst. */
+function friendlyMagisterError(message: string): string {
+  const text = message.toLowerCase();
+  if (text.includes("invalid_grant") || text.includes("session_expired") || text.includes("expired token")) {
+    return "Je Magister-sessie is verlopen. Ververs de echte Magister-pagina met de extensie actief, of log opnieuw in via de Magister-knop.";
+  }
+  if (text.includes("geen school-subdomain") || text.includes("schoolhost")) {
+    return "Vul je Magister-school in bij Instellingen (bijv. schoolnaam.magister.net).";
+  }
+  if (text.includes("unauthorized") || text.includes("401")) {
+    return "Magister accepteert deze sessie niet meer. Log opnieuw in via de echte Magister-pagina.";
+  }
+  return message;
+}
+
 const defaultConnection: PersistedState["connection"] = {
   magisterSchool: "",
   magisterToken: "",
   magisterRefreshToken: "",
   magisterExpiresAt: 0,
+  magisterSessionSource: "",
   magisterClientId: "",
   magisterRedirectUri: "",
   zermeloSubdomain: "",
@@ -164,14 +180,18 @@ export function Providers({ children }: { children: React.ReactNode }) {
       const accessToken = detail?.accessToken;
       if (!accessToken) return;
       setState((s) => {
-        if (s.connection.magisterToken === accessToken) return s;
+        if (s.connection.magisterToken === accessToken && s.connection.magisterSessionSource === "extension") return s;
         return {
           ...s,
           connection: {
             ...s.connection,
             magisterToken: accessToken,
-            magisterRefreshToken: detail.refreshToken || s.connection.magisterRefreshToken,
+            // Een accountcenter-refresh_token is niet bruikbaar voor de
+            // school-API en gaf eerder "invalid_grant". De extensie haalt bij
+            // verloping gewoon een nieuwe sessie uit de echte Magister-pagina.
+            magisterRefreshToken: "",
             magisterExpiresAt: detail.expiresAt || Date.now() + 60 * 60 * 1000,
+            magisterSessionSource: "extension",
             magisterSchool: detail.school || s.connection.magisterSchool,
             magisterClientId: detail.clientId || s.connection.magisterClientId,
             name: detail.name || s.connection.name,
@@ -199,7 +219,28 @@ export function Providers({ children }: { children: React.ReactNode }) {
     setLoadError("");
     try {
       let token = connection.magisterToken;
-      if (connection.magisterExpiresAt && Date.now() > connection.magisterExpiresAt - 60_000 && connection.magisterRefreshToken) {
+
+      if (!connection.magisterSchool) {
+        throw new Error("Vul je Magister-school in bij Instellingen (bijv. schoolnaam.magister.net).");
+      }
+
+      // Een extensiesessie komt van het accountcentrum en mag nooit via de
+      // algemene tokenendpoint vernieuwd worden: dat gaf invalid_grant.
+      if (
+        connection.magisterSessionSource === "extension" &&
+        connection.magisterExpiresAt &&
+        Date.now() > connection.magisterExpiresAt - 60_000
+      ) {
+        window.dispatchEvent(new Event("magisterpro:request-extension-session"));
+        throw new Error("Je Magister-sessie is verlopen. Ververs de echte Magister-pagina met de extensie actief, en klik daarna op Gegevens vernieuwen.");
+      }
+
+      if (
+        connection.magisterSessionSource !== "extension" &&
+        connection.magisterExpiresAt &&
+        Date.now() > connection.magisterExpiresAt - 60_000 &&
+        connection.magisterRefreshToken
+      ) {
         const res = await fetch("/api/auth/magister/token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -240,7 +281,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       }));
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Kon de schoolgegevens niet laden.");
+      const message = error instanceof Error ? error.message : "Kon de schoolgegevens niet laden.";
+      setLoadError(friendlyMagisterError(message));
     } finally {
       loadingRef.current = false;
       setLoading(false);

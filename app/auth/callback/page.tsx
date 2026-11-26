@@ -72,6 +72,7 @@ export default function AuthCallbackPage() {
             magisterToken: json.token,
             magisterRefreshToken: json.refreshToken ?? "",
             magisterExpiresAt: Date.now() + (json.expiresIn ?? 3600) * 1000,
+            magisterSessionSource: "web",
             magisterClientId: pending.clientId,
             magisterRedirectUri: pending.redirectUri,
           },

@@ -79,10 +79,11 @@ export async function POST(request: NextRequest) {
     let payload: Record<string, unknown> = {};
     try { payload = text ? JSON.parse(text) : {}; } catch { /* tekst */ }
     if (!res.ok) {
-      return NextResponse.json(
-        { message: String(payload.error_description ?? payload.error ?? `Token-endpoint gaf status ${res.status}.`) },
-        { status: res.status }
-      );
+      const raw = String(payload.error_description ?? payload.error ?? `Token-endpoint gaf status ${res.status}.`);
+      const message = /invalid_grant/i.test(raw)
+        ? "Je Magister-sessie is verlopen. Log opnieuw in via de echte Magister-pagina."
+        : raw;
+      return NextResponse.json({ message }, { status: res.status });
     }
 
     return NextResponse.json({

@@ -59,6 +59,42 @@ var MagisterProExt = (function () {
     return "";
   }
 
+  function valueFor(obj, name) {
+    if (!obj || typeof obj !== "object") return "";
+    var key = Object.keys(obj).find(function (candidate) {
+      return candidate.toLowerCase() === name.toLowerCase();
+    });
+    return key ? obj[key] : "";
+  }
+
+  /** Zoekt een schoolnaam in opgeslagen Magister-objecten en claims. */
+  function schoolFromObject(obj) {
+    var keys = ["tenant", "tenantName", "tenantUrl", "school", "schoolName", "organization", "organisation", "host", "baseUrl", "magisterWebUrl", "apiBaseUrl"];
+    for (var i = 0; i < keys.length; i++) {
+      var school = cleanSchool(valueFor(obj, keys[i]));
+      if (school && !/^accounts\.magister\.(net|nl)$/.test(school)) return school;
+    }
+    return "";
+  }
+
+  /** Laatste redmiddel: zoek een magister.net-host in alle opgeslagen waarden. */
+  function detectSchoolFromStores() {
+    var result = "";
+    [sessionStorage, localStorage].forEach(function (store) {
+      if (result) return;
+      try {
+        for (var i = 0; i < store.length; i++) {
+          var raw = store.getItem(store.key(i)) || "";
+          var parsed = null;
+          try { parsed = JSON.parse(raw); } catch (_) { /* geen JSON */ }
+          result = schoolFromObject(parsed) || cleanSchool((raw.match(/([a-z0-9-]+\.magister\.(?:net|nl))/i) || [])[1]);
+          if (result) break;
+        }
+      } catch (_) { /* opslag kan geblokkeerd zijn */ }
+    });
+    return result;
+  }
+
   /** Leest één oidc-client-user-object uit en normaliseert het. */
   function parseOidcUser(key, raw, source) {
     // Magister gebruikt oidc.user:…, maar sommige schoolportals bewaren de
@@ -98,7 +134,7 @@ var MagisterProExt = (function () {
       expiresAt: expiresAt,
       authority: authority,
       clientId: clientId,
-      school: schoolFromLocation() || cleanSchool(claims.tenant || claims.school || claims.organization || ""),
+      school: schoolFromLocation() || schoolFromObject(parsed) || schoolFromObject(claims) || "",
       name: name,
       source: source || "magister",
       capturedAt: Date.now(),
@@ -118,6 +154,8 @@ var MagisterProExt = (function () {
         }
       } catch (_) { /* opslag kan geblokkeerd zijn */ }
     });
+    var fallbackSchool = detectSchoolFromStores();
+    found.forEach(function (item) { if (!item.school) item.school = fallbackSchool; });
     return found;
   }
 
@@ -125,6 +163,7 @@ var MagisterProExt = (function () {
     var list = Array.isArray(messages) ? messages : [messages];
     list.forEach(function (payload) {
       if (!payload || !payload.accessToken) return;
+      if (!payload.school) payload.school = detectSchoolFromStores();
       try {
         chrome.runtime.sendMessage({ type: "MAGISTERPRO_SESSION", payload: payload }, function () {
           void chrome.runtime.lastError;

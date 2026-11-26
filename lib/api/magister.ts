@@ -55,8 +55,13 @@ async function request<T>(
     let data: unknown = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     if (!res.ok) {
-      const msg = (data as { message?: string; omschrijving?: string })?.message
-        ?? (data as { omschrijving?: string })?.omschrijving
+      const body = (data ?? {}) as {
+        message?: string; omschrijving?: string; error_description?: string; error?: string;
+      };
+      const msg = body.message
+        ?? body.omschrijving
+        ?? body.error_description
+        ?? body.error
         ?? `Magister gaf status ${res.status}.`;
       return { ok: false, status: res.status, error: msg };
     }

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  CheckCircle2, GraduationCap, KeyRound, Link2, Loader2, LogOut, Palette,
+  CheckCircle2, ExternalLink, GraduationCap, KeyRound, Link2, Loader2, LogOut, Palette,
   Radio, RefreshCw, RotateCcw, ShieldCheck, Sparkles, XCircle,
 } from "lucide-react";
 import { useApp, ACCENTS } from "@/app/providers";
+import { normalizeMagisterHost } from "@/lib/api/magister";
 import { exchangeZermeloCode } from "@/lib/api/zermelo";
 import { toast } from "@/components/ui/Toaster";
 import { Pill } from "@/components/ui/Primitives";
@@ -27,11 +28,25 @@ export default function SettingsPage() {
     loading, loadError, lastSync, data,
   } = useApp();
   const c = state.connection;
+  const [mSchool, setMSchool] = useState(c.magisterSchool);
   const [zSchool, setZSchool] = useState(c.zermeloSubdomain);
   const [code, setCode] = useState("");
   const [zBusy, setZBusy] = useState(false);
   const [zMessage, setZMessage] = useState("");
   const [extMessage, setExtMessage] = useState("");
+
+  useEffect(() => { setMSchool(c.magisterSchool); }, [c.magisterSchool]);
+
+  const saveMagisterSchool = () => {
+    try {
+      const host = normalizeMagisterHost(mSchool);
+      setConnection({ magisterSchool: host });
+      setMSchool(host);
+      void refresh();
+    } catch {
+      toast("Ongeldige school", "warning", "Vul bijv. laurenslyceum.magister.net in.");
+    }
+  };
 
   const requestExtensionSession = () => {
     setExtMessage("");
@@ -72,6 +87,12 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-slate-500 dark:text-white/45">Alleen echte Magister- en Zermelo-data. Geen demo-omgeving.</p>
       </div>
 
+      {loadError && (
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.07] p-4 text-[12px] text-amber-200">
+          {loadError}
+        </div>
+      )}
+
       <section className="panel p-5">
         <h2 className="section-title mb-4">Koppelingen</h2>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -95,13 +116,42 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {!c.magisterToken && (
+        <div className="mt-4 rounded-xl border border-slate-200 p-4 dark:border-white/[0.08]">
+          <label className="label" htmlFor="magister-school">Magister-school</label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              id="magister-school"
+              className="input mono flex-1"
+              value={mSchool}
+              onChange={(e) => setMSchool(e.target.value)}
+              onBlur={saveMagisterSchool}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+              placeholder="schoolnaam.magister.net"
+              autoComplete="organization"
+            />
+            {c.magisterSchool && (
+              <a
+                className="btn-secondary justify-center"
+                href={`https://${c.magisterSchool}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open schoolportaal <ExternalLink size={13} />
+              </a>
+            )}
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-500 dark:text-white/45">
+            Wordt meestal automatisch herkend. Klopt de school niet? Vul hem hier in; er wordt geen wachtwoord gevraagd.
+          </p>
+        </div>
+
+        {(!c.magisterToken || loadError || c.magisterSessionSource === "extension") && (
           <div className="mt-4 space-y-2 rounded-xl border border-slate-200 p-4 dark:border-white/[0.08]">
             <button onClick={requestExtensionSession} className="btn-secondary">
               <KeyRound size={14} /> Magister-sessie via extensie ophalen
             </button>
             <p className="text-[11px] text-slate-500 dark:text-white/50">
-              Log eerst in op <a className="font-semibold text-indigo-400 underline" href="https://accounts.magister.net/" target="_blank" rel="noreferrer">accounts.magister.net</a> met de extensie geïnstalleerd, en vernieuw die pagina een keer. Daarna werkt deze knop.
+              Log in op <a className="font-semibold text-indigo-400 underline" href="https://accounts.magister.net/" target="_blank" rel="noreferrer">accounts.magister.net</a> of je <a className="font-semibold text-indigo-400 underline" href={`https://${c.magisterSchool || "accounts.magister.net"}`} target="_blank" rel="noreferrer">schoolportaal</a> met de extensie geïnstalleerd, en vernieuw die pagina een keer. Daarna werkt deze knop.
             </p>
             {extMessage && <p className="text-[11px] text-amber-400">{extMessage}</p>}
           </div>

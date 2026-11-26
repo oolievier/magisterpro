@@ -199,12 +199,16 @@ export interface SchoolYearStats {
   bestWeekday: string;
 }
 
+export type MagisterSessionSource = "" | "extension" | "native" | "qr" | "web";
+
 export interface ConnectionSettings {
   /** Volledige school-host, bijv. "school.magister.net". */
   magisterSchool: string;
   magisterToken: string;
   magisterRefreshToken: string;
   magisterExpiresAt: number;
+  /** Bron van de huidige sessie; bepaalt of vernieuwen via de tokenendpoint mag. */
+  magisterSessionSource: MagisterSessionSource;
   /** Optioneel: een door de school geregistreerde OAuth-webclient. */
   magisterClientId: string;
   magisterRedirectUri: string;

@@ -78,10 +78,11 @@ export async function POST(request: NextRequest) {
     let payload: Record<string, unknown> = {};
     try { payload = text ? JSON.parse(text) : {}; } catch { /* tekstuele fout */ }
     if (!res.ok) {
-      return NextResponse.json(
-        { message: String(payload.error_description ?? payload.error ?? `Magister gaf status ${res.status}.`) },
-        { status: res.status }
-      );
+      const raw = String(payload.error_description ?? payload.error ?? `Magister gaf status ${res.status}.`);
+      const message = /invalid_grant/i.test(raw)
+        ? "De Magister-inlogcode is verlopen of al gebruikt. Probeer opnieuw in te loggen."
+        : raw;
+      return NextResponse.json({ message }, { status: res.status });
     }
 
     const token = String(payload.access_token ?? "");

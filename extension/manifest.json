@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "MagisterPro — Magister brug & skin",
+  "version": "1.0.0",
+  "description": "Neemt je echte Magister-sessie over zonder wachtwoord in MagisterPro en voegt een lichte skin toe aan Magister.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://accounts.magister.net/*",
+    "https://*.magister.net/*",
+    "https://*.magister.nl/*",
+    "https://magisterpro.vercel.app/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "MagisterPro-status",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://accounts.magister.net/*"],
+      "js": ["content/shared.js", "content/accounts.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*.magister.net/*", "https://*.magister.nl/*"],
+      "exclude_matches": ["https://accounts.magister.net/*"],
+      "js": ["content/shared.js", "content/magister-skin.js"],
+      "css": ["content/skin.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://magisterpro.vercel.app/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "js": ["content/shared.js", "content/magisterpro.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

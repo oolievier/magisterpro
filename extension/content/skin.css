@@ -1,0 +1,75 @@
+/* Conserve skin: alleen onze eigen UI plus een subtiele donker/glas-laag. */
+#magisterpro-skin-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483647;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #fff;
+}
+
+#magisterpro-skin-panel .mp-fab {
+  width: 46px;
+  height: 46px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 32px rgba(79, 70, 229, 0.35);
+}
+
+#magisterpro-skin-panel .mp-card {
+  position: absolute;
+  right: 0;
+  bottom: 58px;
+  width: 248px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(12, 12, 20, 0.94);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+#magisterpro-skin-panel .mp-card[hidden] { display: none; }
+#magisterpro-skin-panel .mp-head { display: flex; align-items: center; justify-content: space-between; }
+#magisterpro-skin-panel .mp-head strong { font-size: 13px; letter-spacing: -0.01em; }
+#magisterpro-skin-panel .mp-close { border: 0; background: none; color: #fff; font-size: 20px; line-height: 1; cursor: pointer; opacity: 0.6; }
+#magisterpro-skin-panel .mp-status { margin: 10px 0; font-size: 11px; line-height: 1.5; color: #a5b4fc; }
+#magisterpro-skin-panel .mp-links { display: grid; gap: 5px; }
+#magisterpro-skin-panel .mp-links button,
+#magisterpro-skin-panel .mp-actions button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e5e7eb;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+#magisterpro-skin-panel .mp-links button:hover,
+#magisterpro-skin-panel .mp-actions button:hover { background: rgba(99, 102, 241, 0.2); }
+#magisterpro-skin-panel .mp-actions { display: grid; gap: 5px; margin-top: 10px; }
+#magisterpro-skin-panel .mp-note { margin: 10px 0 0; font-size: 9px; line-height: 1.45; color: rgba(255, 255, 255, 0.45); }
+
+/* Alleen actief na klik op "Skin aan/uit". */
+body.magisterpro-skin { background: #0a0a0f !important; color-scheme: dark; }
+body.magisterpro-skin header,
+body.magisterpro-skin .mat-toolbar,
+body.magisterpro-skin .navbar,
+body.magisterpro-skin .dna-topbar {
+  background: rgba(10, 10, 16, 0.88) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(16px);
+}
+body.magisterpro-skin button,
+body.magisterpro-skin a { border-radius: 9px !important; }

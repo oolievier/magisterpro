@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { emptyAppData, fetchLiveData } from "@/lib/api/live-data";
+import { toast } from "@/components/ui/Toaster";
 import type {
   AppData, PersistedState, AccentName, ThemeName, HomeworkStatus, EloStatus,
   Grade, ChoiceGroup, Message, BlockedSlot, Appointment,
@@ -144,6 +145,49 @@ export function Providers({ children }: { children: React.ReactNode }) {
     root.style.setProperty("--accent-soft", accent.soft);
     root.style.setProperty("--accent-hex", accent.hex);
   }, [state.theme, state.accent, mounted]);
+
+  /** Neemt de echte Magister-sessie over die de browser-extensie aanbiedt. */
+  useEffect(() => {
+    if (!mounted) return;
+    type ExtensionSession = {
+      accessToken?: string;
+      refreshToken?: string;
+      idToken?: string;
+      expiresAt?: number;
+      school?: string;
+      name?: string;
+      clientId?: string;
+      source?: string;
+    };
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ExtensionSession>).detail;
+      const accessToken = detail?.accessToken;
+      if (!accessToken) return;
+      setState((s) => {
+        if (s.connection.magisterToken === accessToken) return s;
+        return {
+          ...s,
+          connection: {
+            ...s.connection,
+            magisterToken: accessToken,
+            magisterRefreshToken: detail.refreshToken || s.connection.magisterRefreshToken,
+            magisterExpiresAt: detail.expiresAt || Date.now() + 60 * 60 * 1000,
+            magisterSchool: detail.school || s.connection.magisterSchool,
+            magisterClientId: detail.clientId || s.connection.magisterClientId,
+            name: detail.name || s.connection.name,
+          },
+        };
+      });
+      setTimeout(() => {
+        toast("Magister gekoppeld via de browser-extensie.", "success", detail.school || undefined);
+      }, 50);
+    };
+    window.addEventListener("magisterpro:extension-session", handler);
+    // De content script kan het event vóór hydratie hebben gestuurd; vraag het
+    // event hier nog een keer op zodra de provider klaar staat.
+    window.dispatchEvent(new Event("magisterpro:request-extension-session"));
+    return () => window.removeEventListener("magisterpro:extension-session", handler);
+  }, [mounted]);
 
   /** Haalt alle data uit de echte koppelingen; vernieuwt een verlopen token. */
   const refresh = useCallback(async () => {

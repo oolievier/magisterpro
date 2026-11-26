@@ -71,9 +71,19 @@ export default function LoginPage() {
   const [nativePhase, setNativePhase] = useState<NativePhase>("idle");
   const [school, setSchool] = useState("");
   const [useQr, setUseQr] = useState(false);
+  const [extensionReady, setExtensionReady] = useState(false);
   const pendingRef = useRef<PendingNative | null>(null);
 
   useEffect(() => { connectionRef.current = state.connection; }, [state.connection]);
+
+  useEffect(() => {
+    const check = () => setExtensionReady(
+      document.documentElement.getAttribute("data-magisterpro-extension") === "app"
+    );
+    check();
+    const timer = window.setTimeout(check, 800);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const startQr = async () => {
     setError("");
@@ -417,6 +427,15 @@ export default function LoginPage() {
                       ? "De echte Magister-loginpagina opent in de MagisterPro-app — inclusief MFA en school-SSO. Je wachtwoord voer je nooit in MagisterPro in."
                       : "Scan de QR-code met de Magister-companion-app op je telefoon. Je wachtwoord voer je alleen in de app of op magister.net in — nooit hier."}
                   </p>
+                </div>
+
+                <div className={`flex items-start gap-2 rounded-xl border p-3 text-[10px] leading-relaxed ${extensionReady ? "border-emerald-400/20 bg-emerald-500/[0.07] text-emerald-100/80" : "border-white/[0.07] bg-white/[0.02] text-white/40"}`}>
+                  <Zap size={14} className={`mt-0.5 shrink-0 ${extensionReady ? "text-emerald-400" : "text-indigo-300"}`} />
+                  <span>
+                    {extensionReady
+                      ? "MagisterPro-extensie actief. Log normaal in op de echte Magister-site; je sessie wordt automatisch overgenomen — ook met MFA."
+                      : "Met de MagisterPro-browserextensie log je gewoon in op Magister en neemt MagisterPro je sessie over, zonder QR-code of extra app."}
+                  </span>
                 </div>
 
                 {bridge && !useQr && (

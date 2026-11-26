@@ -47,6 +47,17 @@ MAGISTERPRO_URL=https://magisterpro.vercel.app npx cap sync ios       # op macOS
 
 Op Android kan het systeem een keuzedialog tonen als de officiële Magister-app hetzelfde `m6loapp`-scheme heeft geregistreerd; kies dan MagisterPro.
 
+### MagisterPro-browserextensie (skin + sessie-overdracht)
+
+De map `extension/` bevat een Manifest V3-extensie voor Chrome en Edge. Laad hem via `chrome://extensions` → **Ontwikkelaarsmodus** → **Uitpakken** en selecteer de map `extension/`.
+
+- De content scripts op `accounts.magister.net` en de schoolportals lezen de `oidc.user:…`-sessie die de officiële Magister-site zelf in `sessionStorage` schrijft. Er wordt geen wachtwoord verstuurd of door MagisterPro opgeslagen.
+- De service worker bewaart de laatste echte sessie in `chrome.storage.local` en geeft die aan open MagisterPro-tabbladen door via het `magisterpro:extension-session`-event.
+- Op Magister-pagina's verschijnt een klein paneel met snelkoppelingen naar Command Center, Cijferstudio, Rooster, Planner en Instellingen, plus een subtiele donker/glas-skin die je aan en uit kunt zetten.
+- `app/providers.tsx` neemt de sessie automatisch over. Je hoeft op `/login` niets in te vullen; daarna laden alle modules live data.
+
+De extensie is getest met een gesimuleerde oidc-sessie. Een volledige login met een echt schoolaccount kon niet worden geverifieerd omdat daar geen credentials beschikbaar zijn. Firefox gebruikt een ander background-model en vraagt een kleine manifest-aanpassing.
+
 ### Magister QR-koppeling in de browser
 
 Buiten de native shell gebruikt MagisterPro de QR-handshake van de open-source [magister-auth-gateway](https://github.com/DiscipulusApp/magister-auth-gateway): de webapp is zelf de tijdelijke gateway-backend.

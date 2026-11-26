@@ -2,6 +2,7 @@
 "use strict";
 
 var STORAGE_KEY = "magisterpro:magister-session";
+var APP_ORIGIN_KEY = "magisterpro:app-origin";
 var APP_URL = "https://magisterpro.vercel.app";
 var APP_MATCHES = [
   "https://magisterpro.vercel.app/*",
@@ -56,11 +57,21 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     return true;
   }
 
+  if (message.type === "MAGISTERPRO_APP_ORIGIN") {
+    chrome.storage.local.set({ [APP_ORIGIN_KEY]: String(message.origin || APP_URL) }).then(function () {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
   if (message.type === "MAGISTERPRO_OPEN_APP") {
     var path = String(message.path || "/login");
     if (path.charAt(0) !== "/") path = "/" + path;
-    chrome.tabs.create({ url: APP_URL + path });
-    sendResponse({ ok: true });
+    chrome.storage.local.get(APP_ORIGIN_KEY).then(function (data) {
+      var base = data[APP_ORIGIN_KEY] || APP_URL;
+      chrome.tabs.create({ url: base + path });
+      sendResponse({ ok: true });
+    });
     return true;
   }
 

@@ -61,7 +61,9 @@ var MagisterProExt = (function () {
 
   /** Leest één oidc-client-user-object uit en normaliseert het. */
   function parseOidcUser(key, raw, source) {
-    if (!key || key.indexOf(KEY_PREFIX) !== 0 || !raw) return null;
+    // Magister gebruikt oidc.user:…, maar sommige schoolportals bewaren de
+    // sessie onder een eigen key. Accepteer daarom elke JSON-waarde met access_token.
+    if (!key || !raw) return null;
     var parsed;
     try { parsed = JSON.parse(raw); } catch (_) { return null; }
     var accessToken = String(parsed.access_token || parsed.accessToken || "");
@@ -76,9 +78,13 @@ var MagisterProExt = (function () {
       name = [claims.given_name, claims.family_name].filter(Boolean).join(" ").trim();
     }
 
-    var parts = key.slice(KEY_PREFIX.length).split(":");
-    var authority = parts.shift() || "";
-    var clientId = parts.join(":") || "";
+    var authority = "";
+    var clientId = "";
+    if (key.indexOf(KEY_PREFIX) === 0) {
+      var parts = key.slice(KEY_PREFIX.length).split(":");
+      authority = parts.shift() || "";
+      clientId = parts.join(":") || "";
+    }
     var expiresAt = expiryToMs(parsed.expires_at || parsed.expiresAt);
     if (!expiresAt) {
       var expiresIn = Number(parsed.expires_in || parsed.expiresIn || 3600);

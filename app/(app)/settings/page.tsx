@@ -31,6 +31,19 @@ export default function SettingsPage() {
   const [code, setCode] = useState("");
   const [zBusy, setZBusy] = useState(false);
   const [zMessage, setZMessage] = useState("");
+  const [extMessage, setExtMessage] = useState("");
+
+  const requestExtensionSession = () => {
+    setExtMessage("");
+    window.dispatchEvent(new Event("magisterpro:request-extension-session"));
+    window.setTimeout(() => {
+      if (!document.documentElement.getAttribute("data-magisterpro-extension")) {
+        setExtMessage("Extensie niet gevonden. Installeer de MagisterPro-extensie en laad Chrome opnieuw.");
+      } else {
+        setExtMessage("Verzoek verstuurd. Blijft Magister niet verbonden? Ververs eerst de Magister-pagina en probeer opnieuw.");
+      }
+    }, 800);
+  };
 
   const setConnection = (p: Partial<typeof c>) => patch({ connection: { ...c, ...p } });
 
@@ -62,14 +75,14 @@ export default function SettingsPage() {
       <section className="panel p-5">
         <h2 className="section-title mb-4">Koppelingen</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/[0.06] p-4">
+          <div className={`rounded-2xl border p-4 ${c.magisterToken ? "border-emerald-400/30 bg-emerald-400/[0.06]" : "border-amber-400/25 bg-amber-400/[0.05]"}`}>
             <div className="mb-2 flex items-center justify-between">
               <span className="rounded-xl bg-blue-500/12 p-2 text-blue-400"><GraduationCap size={17} /></span>
-              <CheckCircle2 size={16} className="text-emerald-400" />
+              {c.magisterToken ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-amber-400" />}
             </div>
             <p className="text-sm font-bold text-slate-900 dark:text-white">Magister v6</p>
             <p className="mono mt-1 text-[11px] text-slate-500 dark:text-white/45">{c.magisterSchool || "Niet verbonden"}</p>
-            <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{state.connection.name || "Leerling"}</p>
+            <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{c.magisterToken ? (state.connection.name || "Leerling") : "Koppel via de extensie of native app"}</p>
           </div>
           <div className={`rounded-2xl border p-4 ${c.zermeloToken ? "border-emerald-400/30 bg-emerald-400/[0.06]" : "border-amber-400/25 bg-amber-400/[0.05]"}`}>
             <div className="mb-2 flex items-center justify-between">
@@ -81,6 +94,18 @@ export default function SettingsPage() {
             <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{c.zermeloToken ? "Keuzelessen actief" : "Koppel voor KWT en roosterwijzigingen"}</p>
           </div>
         </div>
+
+        {!c.magisterToken && (
+          <div className="mt-4 space-y-2 rounded-xl border border-slate-200 p-4 dark:border-white/[0.08]">
+            <button onClick={requestExtensionSession} className="btn-secondary">
+              <KeyRound size={14} /> Magister-sessie via extensie ophalen
+            </button>
+            <p className="text-[11px] text-slate-500 dark:text-white/50">
+              Log eerst in op <a className="font-semibold text-indigo-400 underline" href="https://accounts.magister.net/" target="_blank" rel="noreferrer">accounts.magister.net</a> met de extensie geïnstalleerd, en vernieuw die pagina een keer. Daarna werkt deze knop.
+            </p>
+            {extMessage && <p className="text-[11px] text-amber-400">{extMessage}</p>}
+          </div>
+        )}
 
         {!c.zermeloToken && (
           <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-4 dark:border-white/[0.08]">

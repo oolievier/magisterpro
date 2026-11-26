@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import QRCode from "qrcode";
 import {
-  AlertTriangle, ArrowRight, CheckCircle2, Clock, GraduationCap, KeyRound, Link2,
+  AlertTriangle, ArrowRight, CheckCircle2, Clock, ExternalLink, GraduationCap, KeyRound, Link2,
   Loader2, RefreshCw, ShieldCheck, Smartphone, Sparkles, Zap,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
@@ -72,9 +72,24 @@ export default function LoginPage() {
   const [school, setSchool] = useState("");
   const [useQr, setUseQr] = useState(false);
   const [extensionReady, setExtensionReady] = useState(false);
+  const [extensionConnected, setExtensionConnected] = useState(false);
   const pendingRef = useRef<PendingNative | null>(null);
 
   useEffect(() => { connectionRef.current = state.connection; }, [state.connection]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      if ((event as CustomEvent<{ accessToken?: string }>).detail?.accessToken) setExtensionConnected(true);
+    };
+    window.addEventListener("magisterpro:extension-session", handler);
+    return () => window.removeEventListener("magisterpro:extension-session", handler);
+  }, []);
+
+  useEffect(() => {
+    if (!extensionConnected || !state.connection.magisterToken) return;
+    const timer = window.setTimeout(() => router.push("/dashboard"), 500);
+    return () => window.clearTimeout(timer);
+  }, [extensionConnected, state.connection.magisterToken, router]);
 
   useEffect(() => {
     const check = () => setExtensionReady(
@@ -431,11 +446,21 @@ export default function LoginPage() {
 
                 <div className={`flex items-start gap-2 rounded-xl border p-3 text-[10px] leading-relaxed ${extensionReady ? "border-emerald-400/20 bg-emerald-500/[0.07] text-emerald-100/80" : "border-white/[0.07] bg-white/[0.02] text-white/40"}`}>
                   <Zap size={14} className={`mt-0.5 shrink-0 ${extensionReady ? "text-emerald-400" : "text-indigo-300"}`} />
-                  <span>
-                    {extensionReady
-                      ? "MagisterPro-extensie actief. Log normaal in op de echte Magister-site; je sessie wordt automatisch overgenomen — ook met MFA."
-                      : "Met de MagisterPro-browserextensie log je gewoon in op Magister en neemt MagisterPro je sessie over, zonder QR-code of extra app."}
-                  </span>
+                  <div className="min-w-0">
+                    <span>
+                      {extensionReady
+                        ? "MagisterPro-extensie actief. Log normaal in op de echte Magister-site; je sessie wordt automatisch overgenomen — ook met MFA."
+                        : "Met de MagisterPro-browserextensie log je gewoon in op Magister en neemt MagisterPro je sessie over, zonder QR-code of extra app."}
+                    </span>
+                    <a
+                      href="https://accounts.magister.net/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1.5 inline-flex items-center gap-1.5 font-semibold text-indigo-300 hover:text-indigo-200"
+                    >
+                      Open Magister <ExternalLink size={11} />
+                    </a>
+                  </div>
                 </div>
 
                 {bridge && !useQr && (

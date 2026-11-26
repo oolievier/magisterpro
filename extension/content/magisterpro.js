@@ -22,6 +22,12 @@
     });
   }
 
+  // Onthoud welke origin van MagisterPro actief is, zodat de skin-links daar
+  // naartoe gaan (productie of een lokale ontwikkelserver).
+  chrome.runtime.sendMessage({ type: "MAGISTERPRO_APP_ORIGIN", origin: location.origin }, function () {
+    void chrome.runtime.lastError;
+  });
+
   // De webapp vraagt de sessie op zodra React is gehydrateerd. Events werken
   // tussen de geïsoleerde content-script-world en de pagina; window-globals niet.
   window.addEventListener("magisterpro:request-extension-session", requestSession);

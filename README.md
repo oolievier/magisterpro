@@ -51,6 +51,8 @@ Op Android kan het systeem een keuzedialog tonen als de officiële Magister-app 
 
 De map `extension/` bevat een Manifest V3-extensie voor Chrome en Edge. Laad hem via `chrome://extensions` → **Ontwikkelaarsmodus** → **Uitpakken** en selecteer de map `extension/`.
 
+Directe download: [`extension.zip`](https://github.com/oolievier/magisterpro/raw/main/extension.zip). Pak het zipbestand uit en selecteer de uitgepakte map bij **Uitpakken**.
+
 - De content scripts op `accounts.magister.net` en de schoolportals lezen de `oidc.user:…`-sessie die de officiële Magister-site zelf in `sessionStorage` schrijft. Er wordt geen wachtwoord verstuurd of door MagisterPro opgeslagen.
 - De service worker bewaart de laatste echte sessie in `chrome.storage.local` en geeft die aan open MagisterPro-tabbladen door via het `magisterpro:extension-session`-event.
 - Op Magister-pagina's verschijnt een klein paneel met snelkoppelingen naar Command Center, Cijferstudio, Rooster, Planner en Instellingen, plus een subtiele donker/glas-skin die je aan en uit kunt zetten.

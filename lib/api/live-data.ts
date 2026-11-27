@@ -113,6 +113,64 @@ const asLocalISO = (date: Date) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${hh}:${mm}`;
 };
 
+/* Afspraken worden in blokken van 4 weken opgehaald. Sommige schoolservers
+ * beperken een enkele `van/tot`-call stilletjes tot een kortere periode; met
+ * chunken krijgen we gegarandeerd de komende 8 weken (met 4 weken marge). */
+const APPOINTMENT_PAST_MS = 30 * 86_400_000;
+const APPOINTMENT_FUTURE_MS = 84 * 86_400_000;
+const APPOINTMENT_CHUNK_MS = 28 * 86_400_000;
+
+function timeRanges(fromMs: number, toMs: number): [number, number][] {
+  const ranges: [number, number][] = [];
+  for (let start = fromMs; start < toMs; start += APPOINTMENT_CHUNK_MS) {
+    ranges.push([start, Math.min(start + APPOINTMENT_CHUNK_MS, toMs)]);
+  }
+  return ranges;
+}
+
+type ApiResult<T> = { ok: boolean; data?: T; error?: string };
+
+async function magisterAppointmentsChunked(
+  config: Parameters<typeof magister.getAppointments>[0],
+  personId: string | number,
+  nowMs: number
+): Promise<ApiResult<unknown[]>> {
+  const ranges = timeRanges(nowMs - APPOINTMENT_PAST_MS, nowMs + APPOINTMENT_FUTURE_MS);
+  const results = await Promise.allSettled(ranges.map(([from, to]) =>
+    magister.getAppointments(config, personId, asLocalISO(new Date(from)), asLocalISO(new Date(to)))
+  ));
+  const rows = results.flatMap((result) =>
+    result.status === "fulfilled" && result.value?.ok ? list(result.value.data) : []
+  );
+  const succeeded = results.some((result) => result.status === "fulfilled" && result.value?.ok);
+  const failure = results.find((result) => result.status === "rejected");
+  return {
+    ok: succeeded,
+    data: rows,
+    error: failure?.status === "rejected" ? String(failure.reason?.message ?? failure.reason) : undefined,
+  };
+}
+
+async function zermeloAppointmentsChunked(
+  config: Parameters<typeof zermelo.getAppointments>[0],
+  nowMs: number
+): Promise<ApiResult<unknown[]>> {
+  const ranges = timeRanges(nowMs - APPOINTMENT_PAST_MS, nowMs + APPOINTMENT_FUTURE_MS);
+  const results = await Promise.allSettled(ranges.map(([from, to]) =>
+    zermelo.getAppointments(config, Math.floor(from / 1000), Math.floor(to / 1000))
+  ));
+  const rows = results.flatMap((result) =>
+    result.status === "fulfilled" && result.value?.ok ? list(result.value.data) : []
+  );
+  const succeeded = results.some((result) => result.status === "fulfilled" && result.value?.ok);
+  const failure = results.find((result) => result.status === "rejected");
+  return {
+    ok: succeeded,
+    data: rows,
+    error: failure?.status === "rejected" ? String(failure.reason?.message ?? failure.reason) : undefined,
+  };
+}
+
 /**
  * Maakt van "NAT199", "WISb191", "Ned" en "Wiskunde B 191" één volledige,
  * herkenbare vaknaam. School-specifieke afkortingen uit de vakkenlijst
@@ -259,7 +317,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   const [gradesRes, appointmentsRes, absencesRes, messagesRes, assignmentsRes, guidesRes,
     enrollmentSubjectsRes, activitiesRes, zermeloRes, zermeloUsersRes] = await Promise.allSettled([
     magisterEnabled ? magister.getGrades(config, aanmeldingId, 400) : Promise.resolve(null),
-    magisterEnabled && personId ? magister.getAppointments(config, personId, from, to) : Promise.resolve(null),
+    magisterEnabled && personId ? magisterAppointmentsChunked(config, personId, Date.now()) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getAbsences(config, personId, from, to) : Promise.resolve(null),
     magisterEnabled ? magister.getMessages(config, 60) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getAssignments(config, personId) : Promise.resolve(null),
@@ -267,10 +325,9 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     magisterEnabled && personId ? magister.getEnrollmentSubjects(config, personId, aanmeldingId) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getActivities(config, personId) : Promise.resolve(null),
     connection.zermeloToken && connection.zermeloSubdomain
-      ? zermelo.getAppointments(
+      ? zermeloAppointmentsChunked(
           { subdomain: connection.zermeloSubdomain, token: connection.zermeloToken },
-          Math.floor(Date.now() / 1000) - 30 * 86_400,
-          Math.floor(Date.now() / 1000) + 120 * 86_400
+          Date.now()
         )
       : Promise.resolve(null),
     connection.zermeloToken && connection.zermeloSubdomain

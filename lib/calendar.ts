@@ -42,7 +42,7 @@ export function calendarFeedUrl(token = getCalendarToken()): string {
   return `${window.location.origin}/api/calendar/${token}.ics`;
 }
 
-/** Schrijft het actuele rooster naar de feed achter de token. */
+/** Schrijft een rollend venster (afgelopen maand + komende 8 weken) naar de feed. */
 export async function publishCalendarFeed(
   appointments: Appointment[],
   subjects: Subject[],
@@ -50,11 +50,19 @@ export async function publishCalendarFeed(
 ): Promise<boolean> {
   const token = getCalendarToken();
   if (!token || typeof window === "undefined") return false;
+  const now = Date.now();
+  const from = now - 30 * 86_400_000;
+  const to = now + 56 * 86_400_000;
+  const windowAppointments = appointments.filter((a) => {
+    const start = new Date(a.start).getTime();
+    const end = new Date(a.end).getTime();
+    return Number.isFinite(start) && Number.isFinite(end) && end >= from && start <= to;
+  });
   try {
     const res = await fetch("/api/calendar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, ics: buildICS(appointments, subjects, teachers) }),
+      body: JSON.stringify({ token, ics: buildICS(windowAppointments, subjects, teachers) }),
       cache: "no-store",
     });
     return res.ok;

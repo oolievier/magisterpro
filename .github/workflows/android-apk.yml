@@ -23,11 +23,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Java 17 instellen
+      - name: Java 21 instellen
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Dependencies installeren
         run: npm ci

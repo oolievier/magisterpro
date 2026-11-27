@@ -7,16 +7,46 @@ import type { Grade, PtaColumn, Subject, EducationLevel } from "@/lib/types";
 export const round1 = (n: number) => Math.round((n + Number.EPSILON) * 10) / 10;
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-/** Gewogen gemiddelde. Geen cijfers betekent "geen waarde", niet nul. */
-export function weightedAverage(grades: Grade[]): number {
-  if (!grades.length) return NaN;
-  const total = grades.reduce((sum, g) => sum + g.weight, 0);
-  if (total <= 0) return NaN;
-  return grades.reduce((sum, g) => sum + g.value * g.weight, 0) / total;
+const labelText = (value: unknown): string =>
+  typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+
+/* Samenvattingskolommen van Magister zijn geen cijfers. Ze staan alleen in de
+ * diagnose: "Voorlopig eindcijfer", "R1", "VG1", "Eind gemiddelde SE",
+ * "Gemiddelde examenvakken", ... */
+const SUMMARY_TEXT = [/\bgemiddelde\b/i, /eindgemiddelde/i, /\beindcijfer\b/i, /\brapportcijfer\b/i];
+const SUMMARY_EXACT = /^(r\s?1|vg\s?1|ve|eind\s?se|eindse|voorlopig\s+eindcijfer|eindgemiddelde|totaalcijfer)$/i;
+
+/** Herkent kolommen die een gemiddelde/eindcijfer samenvatten in ruwe API-velden. */
+export function isSummaryText(...parts: unknown[]): boolean {
+  const values = parts.map(labelText).filter(Boolean);
+  if (!values.length) return false;
+  if (SUMMARY_TEXT.some((pattern) => pattern.test(values.join(" ")))) return true;
+  return values.some((value) => SUMMARY_EXACT.test(value.replace(/\s+/g, " ")));
 }
 
+/** Zelfde check op een gemapt cijfer, ook na handmatige correcties. */
+export function isSummaryGrade(g: Grade): boolean {
+  return isSummaryText(g.label, g.columnCode, g.description, g.rawColumn)
+    || (g.type === "Overig" && Number.isFinite(g.weight) && g.weight === 0);
+}
+
+/** SE-cijfers (schoolexamen, PTA, herkansing) staan los van voortgangscijfers. */
 export function isSeGrade(g: Grade): boolean {
-  return g.type === "PTA" || g.type === "REP" || Boolean(g.ptaColumnId) || /^PTA/i.test(g.columnCode ?? "");
+  const text = [g.label, g.columnCode, g.description, g.rawColumn, g.ptaColumnId]
+    .map(labelText).join(" ");
+  return g.type === "PTA" || g.type === "REP" || Boolean(g.ptaColumnId)
+    || /^(pta|se)\s*\d*/i.test(labelText(g.columnCode))
+    || /\bse\b|\bse\s*\d+\b|\bschoolexamen\b|\beindtoets\b|\bpta\b/i.test(text);
+}
+
+/** Gewogen gemiddelde. Geen cijfers betekent "geen waarde", niet nul.
+ * Samenvattingskolommen tellen nooit mee, ook niet bij ingelezen oude data. */
+export function weightedAverage(grades: Grade[]): number {
+  const usable = grades.filter((g) => !isSummaryGrade(g) && Number.isFinite(g.value) && Number.isFinite(g.weight));
+  if (!usable.length) return NaN;
+  const total = usable.reduce((sum, g) => sum + g.weight, 0);
+  if (total <= 0) return NaN;
+  return usable.reduce((sum, g) => sum + g.value * g.weight, 0) / total;
 }
 
 export interface SubjectStats {
@@ -38,7 +68,7 @@ export function subjectStats(
   grades: Grade[],
   columns: PtaColumn[] = []
 ): SubjectStats {
-  const own = grades.filter((g) => g.subjectId === subjectId);
+  const own = grades.filter((g) => g.subjectId === subjectId && !isSummaryGrade(g));
   const se = own.filter(isSeGrade);
   const progress = own.filter((g) => !isSeGrade(g));
   const sorted = [...own].sort((a, b) => a.date.localeCompare(b.date));
@@ -145,11 +175,12 @@ export function examCheck(
   const roundedGrades = subjects
     .filter((s) => s.isExamSubject)
     .map((s) => {
-      // Samenvattingskolommen (voorlopig eindcijfer, R1/VG1, eind SE, ...) hebben
-      // weging 0 en mogen niet als apart cijfer meetellen: dat geeft NaN of
-      // dubbeltellingen. Alleen echte, gewogen cijfers bepalen de slaagcheck.
+      // Samenvattingskolommen (voorlopig eindcijfer, R1/VG1, eind SE, ...) zijn
+      // geen cijfers: ze mogen niet als apart cijfer meetellen. Alleen echte,
+      // gewogen cijfers bepalen de slaagcheck.
       const own = allGrades.filter((g) =>
-        g.subjectId === s.id && Number.isFinite(g.value) && g.value > 0
+        g.subjectId === s.id && !isSummaryGrade(g)
+        && Number.isFinite(g.value) && g.value > 0
         && Number.isFinite(g.weight) && g.weight > 0
       );
       const raw = weightedAverage(own);

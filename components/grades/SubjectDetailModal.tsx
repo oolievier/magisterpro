@@ -8,7 +8,7 @@ import {
 import { TrendingUp, Activity, ClipboardList, Trophy } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Pill, ProgressBar, StatCard } from "@/components/ui/Primitives";
-import { subjectStats, formatGrade, weightedAverage } from "@/lib/calculations/grades";
+import { subjectStats, formatGrade, isSeGrade } from "@/lib/calculations/grades";
 import { shortDate } from "@/lib/format";
 import { useApp } from "@/app/providers";
 
@@ -19,16 +19,50 @@ export function SubjectDetailModal({ subjectId, onClose }: { subjectId: string |
   if (!subject || !stats) return null;
 
   const grades = data.grades.filter((g) => g.subjectId === subject.id).sort((a, b) => b.date.localeCompare(a.date));
+  // SE's en gewone cijfers blijven twee aparte lijsten, ook al komen ze uit
+  // dezelfde Magister-cijferkolommen.
+  const seGrades = grades.filter(isSeGrade);
+  const progressGrades = grades.filter((g) => !isSeGrade(g));
   const distribution = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({
     n: String(n), count: grades.filter((g) => Math.round(g.value) === n).length,
   }));
+
+  const gradeTable = (title: string, items: typeof grades, emptyText: string) => (
+    <div className="panel overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/[0.08]">
+        <ClipboardList size={15} className="text-accent" /><p className="text-xs font-bold text-slate-700 dark:text-white/80">{title}</p>
+        <span className="mono ml-auto text-[10px] text-slate-400">{items.length} cijfers</span>
+      </div>
+      <div className="max-h-72 overflow-y-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400 dark:bg-[#14141e] dark:text-white/30">
+            <tr><th className="px-4 py-2 font-semibold">Datum</th><th className="px-3 py-2 font-semibold">Omschrijving</th><th className="px-3 py-2 font-semibold">Type</th><th className="px-3 py-2 text-right font-semibold">Weging</th><th className="px-4 py-2 text-right font-semibold">Cijfer</th></tr>
+          </thead>
+          <tbody>
+            {items.length === 0 && (
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-[11px] text-slate-400">{emptyText}</td></tr>
+            )}
+            {items.map((g) => (
+              <tr key={g.id} className="border-t border-slate-100 dark:border-white/[0.05]">
+                <td className="mono whitespace-nowrap px-4 py-2.5 text-slate-500 dark:text-white/45">{shortDate(g.date)}</td>
+                <td className="px-3 py-2.5 text-slate-700 dark:text-white/80">{g.label}{g.isNew && <span className="new-badge ml-2">Nieuw</span>}</td>
+                <td className="px-3 py-2.5"><Pill tone={g.type === "PTA" ? "accent" : g.type === "REP" ? "blue" : "neutral"}>{g.type}</Pill></td>
+                <td className="mono px-3 py-2.5 text-right text-slate-400">{g.weight}×</td>
+                <td className={`mono px-4 py-2.5 text-right text-sm font-bold ${g.value >= 6 ? "text-emerald-400" : "text-rose-400"}`}>{formatGrade(g.value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   return (
     <Modal open={Boolean(subjectId)} onClose={onClose} title={`${subject.name} — cijferdossier`} subtitle={subject.description} wide>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Gemiddelde" value={formatGrade(stats.average)} hint={`${stats.count} cijfers · ${stats.totalWeight}× weging`} />
-        <StatCard label="Schoolexamen" value={formatGrade(stats.seAverage)} tone="blue" hint="PTA + REP" />
-        <StatCard label="Voortgang" value={formatGrade(stats.progressAverage)} tone="emerald" hint="SO + opdrachten" />
+        <StatCard label="Schoolexamen" value={formatGrade(stats.seAverage)} tone="blue" hint={`${seGrades.length} SE-cijfers`} />
+        <StatCard label="Voortgang" value={formatGrade(stats.progressAverage)} tone="emerald" hint={`${progressGrades.length} overige cijfers`} />
         <StatCard label="PTA afgerond" value={Math.round(stats.ptaProgress)} suffix="%" tone="amber" hint="van het schoolexamen" />
       </div>
 
@@ -71,29 +105,10 @@ export function SubjectDetailModal({ subjectId, onClose }: { subjectId: string |
         </div>
       </div>
 
-      <div className="mt-5 panel overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/[0.08]">
-          <ClipboardList size={15} className="text-accent" /><p className="text-xs font-bold text-slate-700 dark:text-white/80">Alle cijfers</p>
-          <span className="mono ml-auto text-[10px] text-slate-400">spreiding {stats.spread.toFixed(1)}</span>
-        </div>
-        <div className="max-h-72 overflow-y-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400 dark:bg-[#14141e] dark:text-white/30">
-              <tr><th className="px-4 py-2 font-semibold">Datum</th><th className="px-3 py-2 font-semibold">Omschrijving</th><th className="px-3 py-2 font-semibold">Type</th><th className="px-3 py-2 text-right font-semibold">Weging</th><th className="px-4 py-2 text-right font-semibold">Cijfer</th></tr>
-            </thead>
-            <tbody>
-              {grades.map((g) => (
-                <tr key={g.id} className="border-t border-slate-100 dark:border-white/[0.05]">
-                  <td className="mono whitespace-nowrap px-4 py-2.5 text-slate-500 dark:text-white/45">{shortDate(g.date)}</td>
-                  <td className="px-3 py-2.5 text-slate-700 dark:text-white/80">{g.label}{g.isNew && <span className="new-badge ml-2">Nieuw</span>}</td>
-                  <td className="px-3 py-2.5"><Pill tone={g.type === "PTA" ? "accent" : g.type === "REP" ? "blue" : "neutral"}>{g.type}</Pill></td>
-                  <td className="mono px-3 py-2.5 text-right text-slate-400">{g.weight}×</td>
-                  <td className={`mono px-4 py-2.5 text-right text-sm font-bold ${g.value >= 6 ? "text-emerald-400" : "text-rose-400"}`}>{formatGrade(g.value)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="mt-5 space-y-3">
+        {gradeTable("Schoolexamen (SE)", seGrades, "Geen SE-cijfers gevonden voor dit vak.")}
+        {gradeTable("Overige cijfers", progressGrades, "Geen overige cijfers gevonden voor dit vak.")}
+        <p className="text-[10px] text-slate-400">Spreiding over alle {grades.length} cijfers: <span className="mono">{stats.spread.toFixed(1)}</span>. Gemiddelde-kolommen uit Magister staan alleen in de Cijferdetectie en tellen niet mee.</p>
       </div>
       <div className="mt-4"><ProgressBar value={stats.ptaProgress} label="Voortgang schoolexamen" color={subject.color} /></div>
     </Modal>

@@ -6,6 +6,7 @@
 import { magister, normalizeMagisterHost, type MagisterConfig } from "@/lib/api/magister";
 import { zermelo, type ZermeloAppointment, type ZermeloLiveSchedule } from "@/lib/api/zermelo";
 import { mergeAppointments } from "@/lib/data-merger";
+import { isSummaryGrade, isSummaryText } from "@/lib/calculations/grades";
 import type {
   AppData, Absence, Appointment, ChoiceGroup, ChoiceOption, EloAssignment, Grade,
   Homework, Message, PtaColumn, Profile, SchoolYearStats, StudyGuide, StudyGuideAttachment,
@@ -382,8 +383,8 @@ export function emptyAppData(): AppData {
     mostCancelledSubjectId: "", bestWeekday: "Maandag",
   };
   return {
-    subjects: [], teachers: [], grades: [], gradeCandidates: [],
-    gradeDiagnostics: { raw: 0, accepted: 0, review: 0, dropped: 0, errors: [], sources: [] },
+    subjects: [], teachers: [], grades: [], gradeCandidates: [], summaryGrades: [],
+    gradeDiagnostics: { raw: 0, accepted: 0, review: 0, dropped: 0, summary: 0, errors: [], sources: [] },
     rawGradeRows: [],
     ptaColumns: [], appointments: [],
     choiceGroups: [], homework: [], studyGuides: [], eloAssignments: [],
@@ -684,18 +685,20 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     const columnType = str(findField(g, /^type$/i)).toLowerCase();
     const columnHead = str(pick(kolom, "kop", "Kop", "KOP"));
     const columnJson = JSON.stringify(kolom ?? {}).toLowerCase();
-    const typeText = [columnType, columnHead, label, columnJson].join(" ").toLowerCase();
-    const isAverage = /gemiddelde|eindse|\bve\b/.test(`${columnType} ${columnHead}`) || /^(r1|vg1|ve|eind se)$/i.test(columnHead);
-    const isPta = !isAverage && (/pta|schoolexamen|\bse\b|eindtoets/.test(typeText) || isTrueish(findField(g, /^(isptakolom|ptakolom|pta)$/i)));
-    const type: Grade["type"] = isAverage ? "Overig"
-      : /herkans|rep\b|2e kans|tweede kans|re-examen/.test(typeText) ? "REP"
-      : /opdracht|assignment|werkstuk|practicum|presentatie/.test(typeText) ? "Opdracht"
-      : isPta ? "PTA" : "SO";
-
     const columnCode = str(pick(g, "KolomCode", "kolomCode"))
       || str(findField(kolom, COLUMN_KEYS))
       || str(findField(g, /^kolom(code)?$/i))
       || `KOL-${index + 1}`;
+    const typeText = [columnType, columnHead, label, columnJson].join(" ").toLowerCase();
+    // "Voorlopig eindcijfer", "R1", "VG1", "Eind gemiddelde SE" enzovoort zijn
+    // samenvattingen — die horen thuis in de diagnose, niet in de cijferlijst.
+    const isSummary = isSummaryText(columnLabel, columnHead, columnType, columnCode, columnJson);
+    const isPta = !isSummary && (/pta|schoolexamen|\bse\b|eindtoets/.test(typeText) || isTrueish(findField(g, /^(isptakolom|ptakolom|pta)$/i)));
+    const type: Grade["type"] = isSummary ? "Overig"
+      : /herkans|rep\b|2e kans|tweede kans|re-examen/.test(typeText) ? "REP"
+      : /opdracht|assignment|werkstuk|practicum|presentatie/.test(typeText) ? "Opdracht"
+      : isPta ? "PTA" : "SO";
+
     const weightValue = num(findField(g, /^(weegfactor|wegfactor|weging|weeging)$/i), NaN);
     const date = toISO(findField(g, /^(datumingevoerd|datum|behaaldop|ingevoerdop|date)$/i)
       ?? pick(g, "DatumIngevoerd", "datumIngevoerd", "ingevoerdOp", "behaaldOp", "datum", "Datum", "date"));
@@ -705,11 +708,11 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
       id: `cijfer-${String(pick(g, "CijferId", "cijferId", "id", "Id") ?? index + 1)}-${index}`,
       subjectId,
       value: needsReview ? 0 : value,
-      weight: isAverage ? 0 : Number.isFinite(weightValue) && weightValue > 0 ? weightValue : 1,
+      weight: isSummary ? 0 : Number.isFinite(weightValue) && weightValue > 0 ? weightValue : 1,
       date, label, type,
       columnCode,
       teacherId: teacherCode ? teacherFor(teacherCode, true) : undefined,
-      ptaColumnId: isPta ? `${subjectId}:${columnCode}` : undefined,
+      ptaColumnId: isPta && !isSummary ? `${subjectId}:${columnCode}` : undefined,
       isNew: Date.now() - new Date(date).getTime() < 3 * 86_400_000,
       needsReview,
       rawValue,
@@ -718,13 +721,16 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     };
   }).filter((grade): grade is Grade => grade !== null);
 
-  const grades = drafts.filter((g) => !g.needsReview);
-  const gradeCandidates = drafts.filter((g) => g.needsReview);
+  const summaryGrades = drafts.filter((g) => isSummaryGrade(g));
+  const cijferDrafts = drafts.filter((g) => !isSummaryGrade(g));
+  const grades = cijferDrafts.filter((g) => !g.needsReview);
+  const gradeCandidates = cijferDrafts.filter((g) => g.needsReview);
   const gradeDiagnostics = {
     raw: rawGrades.length,
     accepted: grades.length,
     review: gradeCandidates.length,
     dropped: droppedGrades,
+    summary: summaryGrades.length,
     errors: gradeFetchErrors,
     sources: gradeSources,
   };
@@ -1099,7 +1105,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     },
     data: {
       subjects: [...subjectMap.values()], teachers: [...teacherMap.values()],
-      grades, gradeCandidates, gradeDiagnostics, rawGradeRows: rawGrades, ptaColumns, appointments,
+      grades, gradeCandidates, summaryGrades, gradeDiagnostics, rawGradeRows: rawGrades, ptaColumns, appointments,
       choiceGroups, homework, studyGuides, eloAssignments, messages, absences,
       stats: {
         lessonsAttended: appointments.filter((a) => !a.cancelled && a.type === "les").length,

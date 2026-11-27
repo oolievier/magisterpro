@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { emptyAppData, fetchLiveData } from "@/lib/api/live-data";
+import { isSummaryGrade } from "@/lib/calculations/grades";
 import { toast } from "@/components/ui/Toaster";
 import { publishCalendarFeed } from "@/lib/calendar";
 import type {
@@ -396,14 +397,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
       };
     };
     const hidden = (g: Grade) => state.gradeOverrides[g.id]?.include === false;
-    const accepted = liveData.grades.map(withOverride).filter((g) => !hidden(g));
+    // Gemiddelde-kolommen blijven ook na overrides en oude data buiten de cijferlijst.
+    const isGrade = (g: Grade) => !isSummaryGrade(g);
+    const accepted = liveData.grades.map(withOverride).filter((g) => !hidden(g) && isGrade(g));
     const resolvedCandidates = liveData.gradeCandidates
       .map(withOverride)
-      .filter((g) => !hidden(g) && g.value > 0 && g.subjectId && g.subjectId !== "vak-onbekend-vak");
+      .filter((g) => !hidden(g) && isGrade(g) && g.value > 0 && g.subjectId && g.subjectId !== "vak-onbekend-vak");
     const candidates = liveData.gradeCandidates
       .map(withOverride)
-      .filter((g) => !hidden(g) && !resolvedCandidates.some((r) => r.id === g.id));
-    const grades = [...accepted, ...resolvedCandidates, ...state.fakeGrades];
+      .filter((g) => !hidden(g) && isGrade(g) && !resolvedCandidates.some((r) => r.id === g.id));
+    const grades = [...accepted, ...resolvedCandidates, ...state.fakeGrades].filter(isGrade);
     const ptaColumns: PtaColumn[] = Object.values(
       grades.filter((g) => !g.fake && g.ptaColumnId).reduce<Record<string, Grade[]>>((acc, g) => {
         (acc[g.ptaColumnId!] ??= []).push(g);
@@ -438,7 +441,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
     const subjects = liveData.subjects
       .map((s) => ({ ...s, color: state.subjectColors[s.id] ?? s.color }))
       .sort((a, b) => a.name.localeCompare(b.name, "nl"));
-    return { ...liveData, subjects, grades, gradeCandidates: candidates, ptaColumns, homework, messages, eloAssignments };
+    return {
+      ...liveData,
+      subjects, grades,
+      gradeCandidates: candidates,
+      summaryGrades: liveData.summaryGrades.map(withOverride),
+      ptaColumns, homework, messages, eloAssignments,
+    };
   }, [liveData, state.fakeGrades, state.gradeOverrides, state.homework, state.subtasks, state.extraSubtasks, state.homeworkNotes, state.customHomework, state.messages, state.seenIds, state.eloStatus, state.hiddenHomeworkIds, state.subjectColors]);
 
   /** Keuzegroepen met actuele bezetting op basis van lokale inschrijvingen. */

@@ -299,8 +299,10 @@ export interface AppData {
   grades: Grade[];
   /** Cijfers die eerst handmatig aan een vak/waarde gekoppeld moeten worden. */
   gradeCandidates: Grade[];
+  /** Gemiddelde-/samenvattingskolommen: alleen zichtbaar in de diagnose. */
+  summaryGrades: Grade[];
   gradeDiagnostics: {
-    raw: number; accepted: number; review: number; dropped: number; errors: string[];
+    raw: number; accepted: number; review: number; dropped: number; summary: number; errors: string[];
     sources: { path: string; rows: number; error?: string }[];
   };
   /** Ruwe cijferrijen voor diagnose-export; bevat geen token of wachtwoord. */

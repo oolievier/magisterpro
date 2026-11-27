@@ -38,15 +38,15 @@ const CANCELLED = new Set([4, 5]);
 
 /** Veelvoorkomende Magister-afkortingen en code-vormen -> volledige vaknaam. */
 const KNOWN_SUBJECTS: Record<string, string> = {
-  ned: "Nederlands", ne: "Nederlands", nederlands: "Nederlands",
-  eng: "Engels", en: "Engels", engels: "Engels",
+  ned: "Nederlands", ne: "Nederlands", nederlands: "Nederlands", netl: "Nederlands", nedl: "Nederlands",
+  eng: "Engels", en: "Engels", engels: "Engels", entl: "Engels", engl: "Engels",
   wis: "Wiskunde", wisa: "Wiskunde A", wisb: "Wiskunde B", wisc: "Wiskunde C", wisd: "Wiskunde D",
   wiskunde: "Wiskunde", wiskundea: "Wiskunde A", wiskundeb: "Wiskunde B",
   nat: "Natuurkunde", natuurkunde: "Natuurkunde",
   natuur: "Natuurkunde", fysica: "Natuurkunde",
-  sk: "Scheikunde", schei: "Scheikunde", scheikunde: "Scheikunde",
-  bio: "Biologie", biologie: "Biologie",
-  eco: "Economie", economie: "Economie",
+  sk: "Scheikunde", schei: "Scheikunde", scheikunde: "Scheikunde", schk: "Scheikunde",
+  bio: "Biologie", biologie: "Biologie", biol: "Biologie",
+  eco: "Economie", economie: "Economie", econ: "Economie",
   gs: "Geschiedenis", gesch: "Geschiedenis", geschiedenis: "Geschiedenis",
   ma: "Maatschappijleer", maats: "Maatschappijleer", maatschappijleer: "Maatschappijleer",
   fr: "Frans", frans: "Frans", du: "Duits", duits: "Duits", spa: "Spaans", spaans: "Spaans",
@@ -64,7 +64,7 @@ const KNOWN_SUBJECTS: Record<string, string> = {
   handel: "Handel", mba: "Management & Bedrijf",
   psych: "Psychologie", psychologie: "Psychologie",
   soc: "Sociologie", sociologie: "Sociologie",
-  techniek: "Techniek", nlt: "Natuur & Techniek",
+  techniek: "Techniek", nlt: "Natuur & Techniek", stat: "Statistiek",
 };
 
 const pick = (row: Row, ...keys: string[]): any => {
@@ -168,7 +168,11 @@ function gradeSubjectName(row: Row): string {
   const vak = pick(row, "Vak", "vak", "Vakken", "vakken");
   const fromVak = str(findField(vak, SUBJECT_KEYS));
   if (fromVak) return fromVak;
-  return str(findField(row, (key) => /^vak(i|naam|code|omschrijving)?$/i.test(key) || /^vaknaam$/i.test(key)));
+  const fromFlat = str(findField(row, (key) => /^vak(i|naam|code|omschrijving)?$/i.test(key) || /^vaknaam$/i.test(key)));
+  if (fromFlat) return fromFlat;
+  // Magister zet het vak bij cijfers in `kolom.naam` (bijv. "NAT199").
+  const kolom = pick(row, "kolom", "Kolom", "CijferKolom");
+  return str(findField(kolom, /^(naam|code|vakcode|studievaknaam)$/i));
 }
 const plain = (value: unknown): string => str(value)
   .replace(/<br\s*\/?>/gi, "\n")
@@ -511,6 +515,15 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   });
   aliasPairs.forEach(([key, value]) => aliases.set(key, value));
 
+  // Cijfers verwijzen naar een studievak via kolom.studievakId. Die koppeling
+  // is betrouwbaarder dan afkortingen en lost ook school-eigen codes op.
+  const subjectNameByStudievakId = new Map<string, string>();
+  rawSubjects.forEach((raw) => {
+    const id = pick(raw, "studievakId", "StudievakId", "id", "Id");
+    const name = str(pick(raw, "omschrijving", "Omschrijving", "naam", "Naam"));
+    if (id !== undefined && id !== null && id !== "" && name) subjectNameByStudievakId.set(String(id), name);
+  });
+
   /* ---- docenten: ruwe docentcodes -> volledige namen ---- */
   const teacherNameByCode = new Map<string, string>();
   const teacherEmailByCode = new Map<string, string>();
@@ -623,19 +636,21 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     const columnLabel = plain(pick(kolom, "KolomOmschrijving", "omschrijving", "naam", "Naam"))
       || plain(findField(g, /^(kolomomschrijving|kolomlabel|description)$/i));
     const label = columnLabel || plain(pick(g, "omschrijving", "Omschrijving", "label")) || "Cijfer";
-    const rawName = gradeSubjectName(g);
+    const studievakId = findField(g, /^studievakid$/i) ?? pick(kolom, "studievakId", "StudievakId");
+    const rawName = subjectNameByStudievakId.get(String(studievakId ?? "")) || gradeSubjectName(g);
     const subjectId = subjectFor(rawName, "Onbekend vak");
     const canonical = canonicalSubject(rawName, aliases);
     const valueOk = Number.isFinite(value) && value >= 0 && value <= 10;
     const needsReview = !valueOk || !canonical || subjectId === `vak-${slug("Onbekend vak")}`;
 
-    const typeText = [
-      str(findField(g, /^(type|soort|kolomtype)$/i)),
-      str(findField(g, /^(isptakolom|ptakolom|pta)$/i)),
-      label,
-    ].join(" ").toLowerCase();
-    const isPta = /pta|schoolexamen|\bse\b|examen|eindtoets/.test(typeText) || isTrueish(findField(g, /^(isptakolom|ptakolom|pta)$/i));
-    const type: Grade["type"] = /herkans|rep\b|2e kans|tweede kans|re-examen/.test(typeText) ? "REP"
+    const columnType = str(findField(g, /^type$/i)).toLowerCase();
+    const columnHead = str(pick(kolom, "kop", "Kop", "KOP"));
+    const columnJson = JSON.stringify(kolom ?? {}).toLowerCase();
+    const typeText = [columnType, columnHead, label, columnJson].join(" ").toLowerCase();
+    const isAverage = /gemiddelde|eindse|\bve\b/.test(`${columnType} ${columnHead}`) || /^(r1|vg1|ve|eind se)$/i.test(columnHead);
+    const isPta = !isAverage && (/pta|schoolexamen|\bse\b|eindtoets/.test(typeText) || isTrueish(findField(g, /^(isptakolom|ptakolom|pta)$/i)));
+    const type: Grade["type"] = isAverage ? "Overig"
+      : /herkans|rep\b|2e kans|tweede kans|re-examen/.test(typeText) ? "REP"
       : /opdracht|assignment|werkstuk|practicum|presentatie/.test(typeText) ? "Opdracht"
       : isPta ? "PTA" : "SO";
 
@@ -652,7 +667,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
       id: `cijfer-${String(pick(g, "CijferId", "cijferId", "id", "Id") ?? index + 1)}-${index}`,
       subjectId,
       value: needsReview ? 0 : value,
-      weight: Number.isFinite(weightValue) && weightValue > 0 ? weightValue : 1,
+      weight: isAverage ? 0 : Number.isFinite(weightValue) && weightValue > 0 ? weightValue : 1,
       date, label, type,
       columnCode,
       teacherId: teacherCode ? teacherFor(teacherCode, true) : undefined,

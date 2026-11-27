@@ -163,7 +163,66 @@ export const magister = {
     const q = new URLSearchParams({ van: from, tot: to });
     return request<T>(config, `api/personen/${personId}/absenties?${q}`);
   },
+
+  /** Volledige vaknamen bij de aanmelding van de leerling. */
+  getEnrollmentSubjects<T = unknown[]>(config: MagisterConfig, personId: number | string, enrollmentId: number | string) {
+    return request<T>(config, `api/personen/${personId}/aanmeldingen/${enrollmentId}/vakken`);
+  },
+
+  /** Zoekt docenten op naam/docentcode op, inclusief volledige achternaam. */
+  getContacts<T = unknown[]>(config: MagisterConfig, personId: number | string, query: string) {
+    const params = new URLSearchParams({ contactPersoonType: "Personeel", q: query });
+    return request<T>(config, `api/personen/${personId}/contactpersonen?${params}`);
+  },
+
+  getActivities<T = unknown[]>(config: MagisterConfig, personId: number | string) {
+    return request<T>(config, `api/personen/${personId}/activiteiten`);
+  },
+
+  getActivityElements<T = unknown[]>(config: MagisterConfig, personId: number | string, activityId: number | string) {
+    return request<T>(config, `api/personen/${personId}/activiteiten/${activityId}/onderdelen`);
+  },
+
+  enrollActivity(config: MagisterConfig, personId: number | string, activityId: number | string, elementId: number | string) {
+    return request(config, `api/personen/${personId}/activiteiten/${activityId}/onderdelen/${elementId}/inschrijvingen`, {
+      method: "POST",
+      body: JSON.stringify({
+        persoonId: Number(personId),
+        activiteitId: Number(activityId),
+        onderdeelId: Number(elementId),
+      }),
+    });
+  },
+
+  unenrollActivity(config: MagisterConfig, personId: number | string, activityId: number | string, elementId: number | string) {
+    return request(config, `api/personen/${personId}/activiteiten/${activityId}/onderdelen/${elementId}/inschrijvingen`, {
+      method: "DELETE",
+    });
+  },
 };
+
+/** Downloadt een echte Magister-bijlage met de sessieheaders van de proxy. */
+export async function downloadMagisterFile(config: MagisterConfig, apiPath: string, filename: string): Promise<void> {
+  const clean = apiPath.replace(/^\/+/, "");
+  if (!/^api\//.test(clean)) throw new Error("Geen geldige Magister-link voor deze bijlage.");
+  const res = await fetch(`/api/magister/${clean}`, {
+    headers: {
+      "x-magister-subdomain": normalizeMagisterHost(config.subdomain),
+      "x-magister-token": config.token,
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Magister gaf status ${res.status} bij het downloaden.`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 /* ---------------------------------------------------------------------------
  * OAuth2/PKCE voor een eigen, bij Magister geregistreerde webclient.

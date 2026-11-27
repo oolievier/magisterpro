@@ -21,7 +21,7 @@ async function proxy(request: NextRequest, segments: string[]) {
 
   const path = segments.join("/");
   const isToken = path === "oauth/token" || path === "api/v3/oauth/token";
-  if (!/^api\/v3\//.test(path) && !isToken) {
+  if (!/^api\/v[34]\//.test(path) && !isToken) {
     return NextResponse.json({ message: "Pad niet toegestaan." }, { status: 403 });
   }
 
@@ -43,6 +43,7 @@ async function proxy(request: NextRequest, segments: string[]) {
       Accept: "application/json",
       "Content-Type": "application/json",
       "User-Agent": "MagisterPro/1.0",
+      "X-Zermelo-Client": "WebApp/MagisterPro",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     cache: "no-store",

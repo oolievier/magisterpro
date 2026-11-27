@@ -13,6 +13,7 @@ import { NAV } from "./Sidebar";
 import { toast } from "@/components/ui/Toaster";
 import { conflictsFor, downloadICS } from "@/lib/calculations/planner";
 import { zermelo } from "@/lib/api/zermelo";
+import { magister } from "@/lib/api/magister";
 import { formatGrade } from "@/lib/calculations/grades";
 
 interface Result {
@@ -81,17 +82,40 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             toast("Deze keuzeles is vol", "warning");
             return;
           }
-          if (!state.connection.zermeloToken) {
-            toast("Zermelo niet gekoppeld", "warning", "Koppel eerst je Zermelo-account via Instellingen.");
-            return;
+          const viaMagister = o.source === "magister";
+          let ok = false;
+          let error = "";
+          if (viaMagister) {
+            if (!state.connection.magisterToken || !state.connection.magisterPersonId) {
+              error = "Magister is niet gekoppeld of het leerlingprofiel ontbreekt.";
+            } else {
+              const res = await magister.enrollActivity(
+                { subdomain: state.connection.magisterSchool, token: state.connection.magisterToken },
+                state.connection.magisterPersonId, o.rawGroupId, o.rawId
+              );
+              ok = res.ok; error = res.error ?? "";
+            }
+          } else if (!state.connection.zermeloToken) {
+            error = "Koppel eerst je Zermelo-account via Instellingen.";
+          } else {
+            const actions = (o.actions ?? []).filter((a) => a.allowed !== false && Boolean(a.post));
+            const has = (a: { code?: number; statusCodes: number[] }, code: number) => a.code === code || a.statusCodes.includes(code);
+            const action = actions.find((a) => has(a, 2002))
+              ?? actions.find((a) => !a.statusCodes.some((code) => code >= 3000))
+              ?? actions[0];
+            if (!action) error = "Zermelo gaf geen inschrijfactie voor deze les.";
+            else {
+              const res = await zermelo.postScheduleAction(
+                { subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken },
+                action.post
+              );
+              ok = res.ok; error = res.error ?? "";
+            }
           }
-          const res = await zermelo.enroll(
-            { subdomain: state.connection.zermeloSubdomain, token: state.connection.zermeloToken },
-            g.id, o.id
-          );
-          if (!res.ok) { toast("Zermelo inschrijving mislukt", "warning", res.error); return; }
+          if (!ok) { toast(`${viaMagister ? "Magister" : "Zermelo"} inschrijving mislukt`, "warning", error); return; }
           enroll(g.id, o.id);
-          toast("Ingeschreven via Zermelo", "success", o.title);
+          toast(`Ingeschreven via ${viaMagister ? "Magister" : "Zermelo"}`, "success", o.title);
+          void app.refresh();
           go("/schedule");
         },
       });

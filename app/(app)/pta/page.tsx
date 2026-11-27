@@ -7,6 +7,7 @@ import { useApp } from "@/app/providers";
 import { subjectStats, weightedAverage, examCheck, formatGrade, round2 } from "@/lib/calculations/grades";
 import { ProgressBar, Pill, StatCard } from "@/components/ui/Primitives";
 import { shortDate } from "@/lib/format";
+import { SubjectBadge } from "@/components/ui/SubjectBadge";
 import Link from "next/link";
 
 export default function PtaPage() {
@@ -14,8 +15,16 @@ export default function PtaPage() {
   const [filter, setFilter] = useState("all");
   const [showAll, setShowAll] = useState(false);
 
-  const columns = useMemo(() => data.ptaColumns.filter((c) => filter === "all" || c.subjectId === filter)
-    .sort((a, b) => a.date.localeCompare(b.date)), [data.ptaColumns, filter]);
+  const columns = useMemo(() => {
+    const names = new Map(data.subjects.map((s) => [s.id, s.name]));
+    return data.ptaColumns
+      .filter((c) => filter === "all" || c.subjectId === filter)
+      .sort((a, b) =>
+        (names.get(a.subjectId) ?? "").localeCompare(names.get(b.subjectId) ?? "", "nl")
+        || a.date.localeCompare(b.date)
+        || a.code.localeCompare(b.code, "nl")
+      );
+  }, [data.ptaColumns, data.subjects, filter]);
 
   const ptaStats = data.subjects.map((s) => ({ subject: s, stats: subjectStats(s.id, data.grades, data.ptaColumns) }));
   const overallProgress = data.ptaColumns.length ? data.ptaColumns.filter((c) => c.gradeId).length / data.ptaColumns.length * 100 : 0;
@@ -63,7 +72,7 @@ export default function PtaPage() {
               <motion.div key={subject.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className="panel p-4">
                 <div className="mb-3 flex items-center gap-2.5">
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[10px] font-bold text-white" style={{ background: subject.color }}>{subject.code}</span>
-                  <p className="flex-1 truncate text-xs font-bold text-slate-800 dark:text-white/90">{subject.name}</p>
+                  <SubjectBadge subjectId={subject.id} className="min-w-0 flex-1 !text-xs !font-bold !text-slate-800 dark:!text-white/90" />
                   <span className="mono text-xs font-bold text-slate-700 dark:text-white/70">{done}/{cols.length}</span>
                 </div>
                 <ProgressBar value={stats.ptaProgress} color={subject.color} label={`${Math.round(stats.ptaProgress)}% van SE afgerond`} />
@@ -99,7 +108,7 @@ export default function PtaPage() {
                   <tr key={c.id} className="border-t border-slate-100 transition hover:bg-slate-50/70 dark:border-white/[0.05] dark:hover:bg-white/[0.02]">
                     <td className="mono px-5 py-3 text-[10px] text-slate-400">{c.code}</td>
                     <td className="max-w-[240px] truncate px-3 py-3 text-slate-700 dark:text-white/80">{c.description}</td>
-                    <td className="px-3 py-3"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: subject.color }} />{subject.short}</span></td>
+                    <td className="px-3 py-3"><SubjectBadge subjectId={subject.id} label={subject.name} /></td>
                     <td className="mono px-3 py-3 text-right text-slate-500 dark:text-white/50">{c.weight}×</td>
                     <td className="px-3 py-3"><Pill tone={c.retakeable ? "green" : "neutral"}>{c.retakeable ? "Ja" : "Nee"}</Pill></td>
                     <td className="mono px-3 py-3 text-slate-500 dark:text-white/50">{future ? <span className="flex items-center gap-1 text-blue-400"><CalendarClock size={11} />{shortDate(c.date)}</span> : shortDate(c.date)}</td>
@@ -126,7 +135,7 @@ export default function PtaPage() {
                 <div key={a.column.id} className="rounded-2xl border border-slate-200 p-4 dark:border-white/[0.08]">
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: subject.color }} /><p className="text-xs font-bold text-slate-800 dark:text-white/90">{a.column.description}</p></div>
-                      <p className="mt-1 text-[10px] text-slate-400">{subject.name} · {a.column.code} · weging {a.column.weight}×</p></div>
+                      <p className="mt-1 flex items-center gap-1 text-[10px] text-slate-400"><SubjectBadge subjectId={subject.id} /> · {a.column.code} · weging {a.column.weight}×</p></div>
                     {i === 0 && <Pill tone="accent">Grootste impact</Pill>}
                   </div>
                   <div className="flex items-center gap-3">

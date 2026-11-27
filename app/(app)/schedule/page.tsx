@@ -5,18 +5,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   CalendarDays, List, Columns3, Grid3x3, Download, Coffee, MapPin, Clock3,
-  AlertTriangle, Sparkles, Filter, CalendarPlus, ArrowRight, CheckCircle2, Radio,
+  AlertTriangle, Sparkles, Filter, CalendarPlus, ArrowRight, CheckCircle2, Radio, ClipboardCheck, Table2,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { KwtModal } from "@/components/zermelo/KwtModal";
 import { Pill } from "@/components/ui/Primitives";
+import { SubjectBadge } from "@/components/ui/SubjectBadge";
 import { Modal } from "@/components/ui/Modal";
 import { findFreeGaps, suggestForGap, downloadICS, timeLabel, minutesLeft, progressInLesson } from "@/lib/calculations/planner";
 import { daysUntil, relativeDeadline, shortDate } from "@/lib/format";
 import { toast } from "@/components/ui/Toaster";
 import type { ChoiceGroup, Appointment } from "@/lib/types";
 
-type View = "dag" | "week" | "maand" | "agenda";
+type View = "dag" | "week" | "raster" | "maand" | "agenda";
 
 function ScheduleView() {
   const router = useRouter();
@@ -49,6 +50,16 @@ function ScheduleView() {
     return Array.from({ length: 42 }).map((_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d.toISOString().slice(0, 10); });
   }, [selectedDay]);
 
+  /** Uren die de school echt gebruikt; het vroegste lesuur wordt kolom 1. */
+  const schoolHours = useMemo(() => {
+    const starts = filtered.map((a) => Number(a.start.slice(11, 13))).filter((h) => Number.isFinite(h));
+    const ends = filtered.map((a) => Number(a.end.slice(11, 13))).filter((h) => Number.isFinite(h));
+    if (!starts.length) return [8, 9, 10, 11, 12, 13, 14, 15, 16];
+    const first = Math.min(...starts);
+    const last = Math.max(...starts, ...ends);
+    return Array.from({ length: Math.max(1, last - first + 1) }, (_, i) => first + i);
+  }, [filtered]);
+
   const dayStats = (iso: string) => {
     const appts = filtered.filter((a) => a.start.slice(0, 10) === iso && !a.cancelled);
     const gaps = findFreeGaps(appts);
@@ -64,24 +75,25 @@ function ScheduleView() {
     const subject = data.subjects.find((s) => s.id === a.subjectId);
     const current = new Date(a.start) <= now && new Date(a.end) > now;
     return (
-      <motion.div key={a.id} layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-        className={`relative overflow-hidden rounded-xl border p-2.5 transition ${a.cancelled ? "border-rose-400/25 bg-rose-400/[0.06] opacity-70" : "border-slate-200 bg-white dark:border-white/[0.08] dark:bg-white/[0.03]"} ${current ? "ring-2 ring-accent/50" : ""}`}
-        style={{ borderLeftColor: subject?.color, borderLeftWidth: 3 }}>
+      <motion.div key={a.id} layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ y: -1 }}
+        className={`relative overflow-hidden rounded-xl border p-2.5 transition ${a.cancelled ? "border-rose-500/60 bg-rose-500/[0.12]" : a.type === "toets" ? "border-amber-400/50 bg-amber-400/[0.08] ring-1 ring-amber-400/20" : "border-slate-200 bg-white dark:border-white/[0.08] dark:bg-white/[0.03]"} ${current ? "ring-2 ring-accent/50" : ""}`}
+        style={{ borderLeftColor: a.cancelled ? "#f43f5e" : a.type === "toets" ? "#f59e0b" : subject?.color, borderLeftWidth: 3 }}>
         {current && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" style={{ width: `${progressInLesson(a.start, a.end, now)}%` }} />}
         <div className="flex items-start justify-between gap-1">
           <p className={`truncate text-[11px] font-bold ${a.cancelled ? "text-rose-400 line-through" : "text-slate-800 dark:text-white/85"}`}>{a.title}</p>
-          {a.type === "toets" && <Pill tone="red">{a.toetsType}</Pill>}
+          {a.type === "toets" && <span className="flex shrink-0 items-center gap-1 rounded-md bg-rose-500 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white shadow-sm"><ClipboardCheck size={10} />{a.toetsType ?? "toets"}</span>}
           {a.kwtGroupId && <Pill tone="accent">KWT</Pill>}
         </div>
         <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
           <span className="mono">{timeLabel(a.start)}</span>
           <span className="flex items-center gap-0.5"><MapPin size={9} />{a.location}</span>
+          {subject && <SubjectBadge subjectId={subject.id} label={subject.short} showDot={false} className="ml-auto !text-[9px]" />}
         </div>
         {a.originalLocation && a.originalLocation !== a.location && (
           <p className="mt-1 flex items-center gap-1 text-[9px] font-bold text-amber-400"><AlertTriangle size={9} /> was {a.originalLocation}</p>
         )}
         {a.cancelled && <p className="mt-1 text-[9px] font-bold text-rose-400">LES UITGEVALLEN</p>}
-        {!compact && a.teacherId && <p className="mt-1 text-[9px] text-slate-400">{data.teachers.find((t) => t.id === a.teacherId)?.abbreviation} · bron: {a.source}</p>}
+        {!compact && a.teacherId && <p className="mt-1 text-[9px] text-slate-400">{data.teachers.find((t) => t.id === a.teacherId)?.name ?? "Onbekende docent"} · bron: {a.source}</p>}
       </motion.div>
     );
   };
@@ -99,7 +111,7 @@ function ScheduleView() {
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.02]">
-          {([["dag", CalendarDays], ["week", Columns3], ["maand", Grid3x3], ["agenda", List]] as const).map(([id, Icon]) => (
+          {([["dag", CalendarDays], ["week", Columns3], ["raster", Table2], ["maand", Grid3x3], ["agenda", List]] as const).map(([id, Icon]) => (
             <button key={id} onClick={() => setView(id)} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${view === id ? "bg-accent/12 text-accent" : "text-slate-500 hover:text-slate-800 dark:text-white/45"}`}><Icon size={14} />{id}</button>
           ))}
         </div>
@@ -110,9 +122,35 @@ function ScheduleView() {
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400"><Radio size={13} className="text-emerald-400" /> Zermelo leidend voor lokaal & uitval</span>
       </div>
 
+      {/* Grote rode uitvalmelding */}
+      {(() => {
+        const cancelled = allAppointments
+          .filter((a) => a.cancelled && new Date(a.end) >= new Date(now.toISOString().slice(0, 10) + "T00:00:00"))
+          .sort((a, b) => a.start.localeCompare(b.start));
+        if (!cancelled.length) return null;
+        return (
+          <motion.section initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            className="relative overflow-hidden rounded-2xl border-2 border-rose-500 bg-gradient-to-r from-rose-600/25 via-rose-500/15 to-rose-600/10 p-5 shadow-[0_0_40px_-12px_rgba(244,63,94,0.6)]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-500 text-white"><AlertTriangle size={24} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-300">Lesuitval · {cancelled.length} {cancelled.length === 1 ? "les" : "lessen"}</p>
+                <h2 className="mt-0.5 text-lg font-black text-rose-100">{cancelled[0].title} valt uit</h2>
+                <p className="mt-1 text-xs text-rose-200/80">
+                  {shortDate(cancelled[0].start)} · {timeLabel(cancelled[0].start)} · {" "}
+                  {cancelled[0].subjectId ? <SubjectBadge subjectId={cancelled[0].subjectId} className="!text-rose-200" /> : "Onbekend vak"}
+                  {cancelled.length > 1 && ` · en nog ${cancelled.length - 1} andere${cancelled.length === 2 ? "" : "n"}`}
+                </p>
+              </div>
+              <Pill tone="red">GEANNULEERD</Pill>
+            </div>
+          </motion.section>
+        );
+      })()}
+
       {/* KWT-blokken */}
       <section>
-        <div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-accent" /><h2 className="section-title">Openstaande Zermelo-keuzelessen</h2><Pill tone="green">Live</Pill></div>
+        <div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-accent" /><h2 className="section-title">Openstaande keuzeblokken · Magister + Zermelo</h2><Pill tone="green">Live</Pill></div>
         <div className="grid gap-3 md:grid-cols-3">
           {data.choiceGroups.map((g) => {
             const chosen = state.enrollments[g.id] ? g.options.find((o) => o.id === state.enrollments[g.id]) : null;
@@ -201,6 +239,91 @@ function ScheduleView() {
         </section>
       )}
 
+      {view === "raster" && (() => {
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const dayStart = (iso: string) => new Date(`${iso}T${pad(schoolHours[0])}:00:00`).getTime();
+        const totalMs = schoolHours.length * 3_600_000;
+        const pos = (iso: string, start: string, end: string) => {
+          const left = Math.max(0, Math.min(100, (new Date(start).getTime() - dayStart(iso)) / totalMs * 100));
+          const right = Math.min(100, (new Date(end).getTime() - dayStart(iso)) / totalMs * 100);
+          return { left: `${left}%`, width: `${Math.max(1.5, right - left)}%` };
+        };
+        const gapsFor = (appts: Appointment[]) => {
+          const sorted = [...appts].sort((a, b) => a.start.localeCompare(b.start));
+          return sorted.slice(0, -1).flatMap((a, i) => {
+            const next = sorted[i + 1];
+            const minutes = Math.round((new Date(next.start).getTime() - new Date(a.end).getTime()) / 60_000);
+            if (minutes < 15) return [];
+            const lunch = new Date(a.end).getHours() < 13 && new Date(next.start).getHours() >= 12 && minutes >= 30;
+            return [{ start: a.end, end: next.start, minutes, label: lunch ? "Lunchpauze" : minutes >= 45 ? "Pauze" : "Tussenuur" }];
+          });
+        };
+        return (
+          <section className="panel overflow-hidden p-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div><h2 className="text-base font-bold text-slate-900 dark:text-white">Urenraster</h2>
+                <p className="text-[11px] text-slate-400">Gedetecteerde lesuren uit je echte rooster · kolom 1 = {pad(schoolHours[0])}:00 (1e uur)</p></div>
+              <div className="flex flex-wrap gap-3 text-[10px] text-slate-400">
+                <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-accent" />Les</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-amber-400" />Toets</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm border border-dashed border-emerald-400" />Pauze/tussenuur</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-rose-500" />Uitval</span>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[980px]">
+                <div className="flex border-b border-slate-200 dark:border-white/[0.08]">
+                  <div className="w-20 shrink-0 px-2 pb-2 text-[9px] font-bold uppercase text-slate-400">Dag</div>
+                  <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${schoolHours.length}, minmax(0, 1fr))` }}>
+                    {schoolHours.map((hour, i) => (
+                      <div key={hour} className="border-l border-slate-200 px-1 pb-2 dark:border-white/[0.06]">
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-accent">{i + 1}e uur</p>
+                        <p className="mono text-[10px] text-slate-500 dark:text-white/50">{pad(hour)}:00</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {weekDays.map((iso) => {
+                  const stats = dayStats(iso);
+                  const gaps = gapsFor(stats.appts);
+                  return (
+                    <div key={iso} className="flex border-b border-slate-100 dark:border-white/[0.05]">
+                      <div className="flex w-20 shrink-0 flex-col justify-center px-2 py-2">
+                        <p className="text-[10px] font-bold uppercase text-slate-600 dark:text-white/70">{new Date(iso + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short" })}</p>
+                        <p className="mono text-[10px] text-slate-400">{iso.slice(8)}</p>
+                      </div>
+                      <div className="relative h-[88px] flex-1">
+                        <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${schoolHours.length}, minmax(0, 1fr))` }}>
+                          {schoolHours.map((hour) => <div key={hour} className="border-l border-slate-200/70 dark:border-white/[0.06]" />)}
+                        </div>
+                        {gaps.map((gap) => (
+                          <div key={`${gap.start}-${gap.end}`} style={pos(iso, gap.start, gap.end)}
+                            className="absolute top-1 flex h-[36px] items-center justify-center overflow-hidden rounded-md border border-dashed border-emerald-400/60 bg-emerald-400/[0.08] px-0.5 text-center text-[8px] font-bold text-emerald-500" title={`${gap.label}: ${gap.minutes} minuten`}>
+                            <span className="truncate">{gap.label} · {gap.minutes}m</span>
+                          </div>
+                        ))}
+                        {stats.appts.map((a, i) => {
+                          const subject = data.subjects.find((s) => s.id === a.subjectId);
+                          return (
+                            <motion.div key={a.id} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.02 }}
+                              style={{ ...pos(iso, a.start, a.end), top: i % 2 ? 48 : 6, background: a.cancelled ? "rgba(244,63,94,0.22)" : a.type === "toets" ? "rgba(245,158,11,0.18)" : `${subject?.color ?? "#6366f1"}26`, borderColor: a.cancelled ? "#f43f5e" : a.type === "toets" ? "#f59e0b" : subject?.color ?? "#6366f1" }}
+                              className="absolute h-[38px] overflow-hidden rounded-lg border-l-[3px] px-1.5 py-1">
+                              <p className={`truncate text-[9px] font-bold ${a.cancelled ? "text-rose-400 line-through" : "text-slate-800 dark:text-white/85"}`}>{a.title}</p>
+                              <p className="mono truncate text-[8px] text-slate-500 dark:text-white/45">{timeLabel(a.start)} {a.type === "toets" && "· TOETS"}{a.cancelled && " · UITVAL"}</p>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="mt-3 text-[10px] text-slate-400">Pauzes en tussenuren worden automatisch afgeleid uit de tijd tussen twee lessen. Overlaprende lessen stapelen in de rastercel.</p>
+          </section>
+        );
+      })()}
+
       {view === "maand" && (
         <section className="panel p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -233,9 +356,9 @@ function ScheduleView() {
               <div key={a.id} className="flex items-center gap-4 p-3.5">
                 <div className="w-16 shrink-0 text-center"><p className="mono text-sm font-bold text-slate-900 dark:text-white">{a.start.slice(8, 10)}</p><p className="text-[9px] uppercase text-slate-400">{new Date(a.start + "T12:00:00").toLocaleDateString("nl-NL", { month: "short" })}</p></div>
                 <span className="h-9 w-1 rounded-full" style={{ background: subject?.color ?? "#64748b" }} />
-                <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-800 dark:text-white/85">{a.title}</p><p className="text-[10px] text-slate-400">{subject?.name} · {a.location} · {data.teachers.find((t) => t.id === a.teacherId)?.abbreviation}</p></div>
+                <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-800 dark:text-white/85">{a.title}</p><p className="text-[10px] text-slate-400">{subject?.name} · {a.location} · {data.teachers.find((t) => t.id === a.teacherId)?.name ?? "—"}</p></div>
                 <span className="mono text-xs text-slate-500 dark:text-white/50">{timeLabel(a.start)}</span>
-                {a.type === "toets" && <Pill tone="red">{a.toetsType}</Pill>}
+                {a.type === "toets" && <span className="flex shrink-0 items-center gap-1 rounded-md bg-rose-500 px-1.5 py-0.5 text-[9px] font-black uppercase text-white"><ClipboardCheck size={10} />{a.toetsType ?? "toets"}</span>}
                 {a.cancelled && <Pill tone="red">uitval</Pill>}
               </div>
             );

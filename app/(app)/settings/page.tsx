@@ -25,6 +25,7 @@ const LEVELS: { value: EducationLevel; label: string }[] = [
 export default function SettingsPage() {
   const {
     state, patch, setTheme, setAccent, refresh, logout, resetLocalData,
+    setSubjectColor, resetSubjectColors,
     loading, loadError, lastSync, data,
   } = useApp();
   const c = state.connection;
@@ -67,7 +68,13 @@ export default function SettingsPage() {
     setZMessage("");
     const res = await exchangeZermeloCode(zSchool, code);
     if (res.ok && res.data) {
-      setConnection({ zermeloSubdomain: zSchool.replace(/\.zportal\.nl.*$/, ""), zermeloToken: res.data.access_token });
+      const expiresIn = Number(res.data.expires_in ?? res.data.expiresIn ?? 0);
+      setConnection({
+        zermeloSubdomain: zSchool.replace(/\.zportal\.nl.*$/, ""),
+        zermeloToken: res.data.access_token ?? "",
+        zermeloTokenExpiresAt: expiresIn > 0 ? Date.now() + expiresIn * 1000 : 0,
+        zermeloStudentCode: "",
+      });
       setCode("");
       setZMessage("Zermelo gekoppeld. Keuzelessen worden opnieuw geladen.");
       toast("Zermelo gekoppeld", "success");
@@ -115,6 +122,12 @@ export default function SettingsPage() {
             <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{c.zermeloToken ? "Keuzelessen actief" : "Koppel voor KWT en roosterwijzigingen"}</p>
           </div>
         </div>
+
+        {c.zermeloToken && c.zermeloTokenExpiresAt > 0 && Date.now() > c.zermeloTokenExpiresAt - 86_400_000 && (
+          <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] p-3 text-[11px] text-amber-400">
+            Je Zermelo-koppeling verloopt binnenkort. Maak een nieuwe koppelingscode aan via je schoolportaal als inschrijven niet meer werkt.
+          </div>
+        )}
 
         <div className="mt-4 rounded-xl border border-slate-200 p-4 dark:border-white/[0.08]">
           <label className="label" htmlFor="magister-school">Magister-school</label>
@@ -218,6 +231,32 @@ export default function SettingsPage() {
           ))}
         </div>
       </section>
+
+      <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="panel p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="rounded-xl bg-accent/12 p-2 text-accent"><Palette size={17} /></span>
+            <div><h2 className="section-title">Vakkleuren</h2><p className="text-xs text-slate-500 dark:text-white/45">Kies per vak een eigen kleur voor rooster, cijfers en PTA.</p></div>
+          </div>
+          <button onClick={() => { resetSubjectColors(); toast("Vakkleuren hersteld", "success"); }} className="btn-secondary"><RotateCcw size={13} /> Standaardkleuren</button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {data.subjects.map((s) => (
+            <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-white/[0.08]">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
+              <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-700 dark:text-white/75">{s.name}</span>
+              <div className="flex gap-1">
+                {["#6366f1", "#06b6d4", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#3b82f6", "#ec4899"].map((color) => (
+                  <button key={color} title={`Kleur ${color}`} onClick={() => setSubjectColor(s.id, color)}
+                    className={`h-4 w-4 rounded-full transition hover:scale-125 ${state.subjectColors[s.id] === color ? "ring-2 ring-white ring-offset-1 ring-offset-slate-200 dark:ring-offset-[#12121c]" : ""}`}
+                    style={{ background: color }} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {data.subjects.length === 0 && <p className="py-6 text-center text-xs text-slate-400">Vakken verschijnen zodra de schoolkoppeling gegevens laadt.</p>}
+      </motion.section>
 
       <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="panel flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>

@@ -80,6 +80,11 @@ export interface Appointment {
 export interface ChoiceOption {
   id: string;
   groupId: string;
+  /** Bron van de inschrijving; bepaalt welke API gebruikt wordt. */
+  source: "magister" | "zermelo";
+  /** Ruwe ID's zoals de schoolportalen die kennen (zonder UI-prefix). */
+  rawId: string;
+  rawGroupId: string;
   subjectId?: string;
   teacherId?: string;
   title: string;
@@ -90,6 +95,10 @@ export interface ChoiceOption {
   capacity: number;
   enrolled: number;
   kind: "KWT" | "steun" | "stilte" | "workshop";
+  alreadyEnrolled?: boolean;
+  canEnroll?: boolean;
+  /** Acties die Zermelo zelf in liveschedule meegeeft (nooit zelf opgebouwd). */
+  actions?: { code?: number; allowed?: boolean; post: string; statusCodes: number[] }[];
 }
 
 /** Een openstaand keuzeblok in het rooster. */
@@ -100,6 +109,7 @@ export interface ChoiceGroup {
   end: string;
   mandatory: boolean;
   deadline: string;
+  source: "magister" | "zermelo";
   options: ChoiceOption[];
 }
 
@@ -126,13 +136,21 @@ export interface Homework {
   estimatedMinutes?: number;
 }
 
+export interface StudyGuideAttachment {
+  id: string;
+  name: string;
+  /** Relatief API-pad bij Magister; leeg als de school geen directe link geeft. */
+  url: string;
+  mime?: string;
+}
+
 export interface StudyGuide {
   id: string;
   subjectId: string;
   title: string;
   week: number;
   goals: string[];
-  attachments: string[];
+  attachments: StudyGuideAttachment[];
   updatedAt: string;
 }
 
@@ -147,6 +165,7 @@ export interface EloAssignment {
   status: EloStatus;
   grade?: number;
   attachmentCount: number;
+  attachments: StudyGuideAttachment[];
   guideId?: string;
   isNew?: boolean;
 }
@@ -205,6 +224,8 @@ export interface ConnectionSettings {
   /** Volledige school-host, bijv. "school.magister.net". */
   magisterSchool: string;
   magisterToken: string;
+  /** Wordt uit het echte Magister-account gehaald; nodig voor activiteiten. */
+  magisterPersonId: string;
   magisterRefreshToken: string;
   magisterExpiresAt: number;
   /** Bron van de huidige sessie; bepaalt of vernieuwen via de tokenendpoint mag. */
@@ -214,6 +235,9 @@ export interface ConnectionSettings {
   magisterRedirectUri: string;
   zermeloSubdomain: string;
   zermeloToken: string;
+  zermeloTokenExpiresAt: number;
+  /** Leerlingcode uit de echte Zermelo-session; nodig voor liveschedule-acties. */
+  zermeloStudentCode: string;
   level: EducationLevel;
   name: string;
   school: string;
@@ -242,6 +266,12 @@ export interface PersistedState {
   fakeGrades: Grade[];
   seenIds: string[];
   sidebarCollapsed: boolean;
+  /** Door de leerling gekozen vakkleuren, gesleuteld op subjectId. */
+  subjectColors: Record<string, string>;
+  /** Wanneer een taak (ook via bulk) is afgerond. */
+  homeworkCompletedAt: Record<string, string>;
+  /** Huiswerk uit het verleden dat bewust uit zicht is gehaald. */
+  hiddenHomeworkIds: string[];
 }
 
 export interface AppData {

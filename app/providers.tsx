@@ -28,6 +28,7 @@ function friendlyMagisterError(message: string): string {
 const defaultConnection: PersistedState["connection"] = {
   magisterSchool: "",
   magisterToken: "",
+  magisterPersonId: "",
   magisterRefreshToken: "",
   magisterExpiresAt: 0,
   magisterSessionSource: "",
@@ -35,6 +36,8 @@ const defaultConnection: PersistedState["connection"] = {
   magisterRedirectUri: "",
   zermeloSubdomain: "",
   zermeloToken: "",
+  zermeloTokenExpiresAt: 0,
+  zermeloStudentCode: "",
   level: "vwo5",
   name: "",
   school: "",
@@ -60,6 +63,9 @@ const defaultState: PersistedState = {
   fakeGrades: [],
   seenIds: [],
   sidebarCollapsed: false,
+  subjectColors: {},
+  homeworkCompletedAt: {},
+  hiddenHomeworkIds: [],
 };
 
 export const ACCENTS: Record<AccentName, { name: string; rgb: string; soft: string; hex: string }> = {
@@ -102,6 +108,11 @@ interface AppContextValue {
   markMessageRead: (id: string) => void;
   addHomework: (title: string, subjectId: string, due: string) => void;
   markSeen: (ids: string[]) => void;
+  setSubjectColor: (id: string, color: string) => void;
+  resetSubjectColors: () => void;
+  completeHomeworkIds: (ids: string[]) => void;
+  hideHomeworkIds: (ids: string[]) => void;
+  restoreHiddenHomework: () => void;
   choiceGroups: ChoiceGroup[];
   appointments: Appointment[];
   toggleSidebar: () => void;
@@ -269,6 +280,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         magisterSchool: connection.magisterSchool,
         zermeloSubdomain: connection.zermeloSubdomain,
         zermeloToken: connection.zermeloToken,
+        zermeloStudentCode: connection.zermeloStudentCode,
       });
       setLiveData(result.data);
       setLastSync(new Date());
@@ -278,6 +290,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
           ...s.connection,
           name: result.name || s.connection.name,
           school: result.school || s.connection.school,
+          magisterPersonId: result.personId || s.connection.magisterPersonId,
+          zermeloStudentCode: result.studentCode || s.connection.zermeloStudentCode,
         },
       }));
     } catch (error) {
@@ -306,7 +320,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         note: state.homeworkNotes[h.id] ?? h.note,
       })),
       ...state.customHomework,
-    ];
+    ].filter((h) => !state.hiddenHomeworkIds.includes(h.id));
     const messages = [
       ...liveData.messages.map((m) => ({ ...m, read: m.read || state.seenIds.includes(m.id) })),
       ...state.messages,
@@ -314,8 +328,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
     const eloAssignments = liveData.eloAssignments.map(
       (e) => ({ ...e, status: state.eloStatus[e.id] ?? e.status })
     );
-    return { ...liveData, grades, homework, messages, eloAssignments };
-  }, [liveData, state.fakeGrades, state.homework, state.subtasks, state.extraSubtasks, state.homeworkNotes, state.customHomework, state.messages, state.seenIds, state.eloStatus]);
+    const subjects = liveData.subjects
+      .map((s) => ({ ...s, color: state.subjectColors[s.id] ?? s.color }))
+      .sort((a, b) => a.name.localeCompare(b.name, "nl"));
+    return { ...liveData, subjects, grades, homework, messages, eloAssignments };
+  }, [liveData, state.fakeGrades, state.homework, state.subtasks, state.extraSubtasks, state.homeworkNotes, state.customHomework, state.messages, state.seenIds, state.eloStatus, state.hiddenHomeworkIds, state.subjectColors]);
 
   /** Keuzegroepen met actuele bezetting op basis van lokale inschrijvingen. */
   const choiceGroups = useMemo<ChoiceGroup[]>(() => {
@@ -344,7 +361,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         location: option.location,
         title: option.title,
         type: option.kind === "steun" ? "steun" : "KWT",
-        source: "zermelo" as const,
+        source: option.source,
         kwtGroupId: groupId,
       }];
     });
@@ -364,6 +381,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enrollments: {}, homework: {}, subtasks: {}, extraSubtasks: {}, homeworkNotes: {},
       customHomework: [], messages: [], sentMessages: [], notes: {}, eloStatus: {},
       blockedSlots: [], focusSessions: [], completedChores: [], fakeGrades: [], seenIds: [],
+      subjectColors: {}, homeworkCompletedAt: {}, hiddenHomeworkIds: [],
     }));
   }, []);
 
@@ -377,7 +395,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       delete next[groupId];
       patch({ enrollments: next });
     },
-    setHomeworkStatus: (id, status) => patch({ homework: { ...state.homework, [id]: status } }),
+    setHomeworkStatus: (id, status) => patch({
+      homework: { ...state.homework, [id]: status },
+      homeworkCompletedAt: status === "done"
+        ? { ...state.homeworkCompletedAt, [id]: new Date().toISOString() }
+        : state.homeworkCompletedAt,
+    }),
     toggleSubtask: (homeworkId, subtaskId) => {
       const current = state.subtasks[homeworkId] ?? [];
       const base = [...(data.homework.find((h) => h.id === homeworkId)?.subtasks ?? []), ...(state.extraSubtasks[homeworkId] ?? [])];
@@ -423,6 +446,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
         }, ...state.customHomework],
       }),
     markSeen: (ids) => patch({ seenIds: [...new Set([...state.seenIds, ...ids])] }),
+    setSubjectColor: (id, color) => patch({ subjectColors: { ...state.subjectColors, [id]: color } }),
+    resetSubjectColors: () => patch({ subjectColors: {} }),
+    completeHomeworkIds: (ids) => {
+      const nowIso = new Date().toISOString();
+      const homeworkStatus = { ...state.homework };
+      const homeworkCompletedAt = { ...state.homeworkCompletedAt };
+      ids.forEach((id) => { homeworkStatus[id] = "done"; homeworkCompletedAt[id] = nowIso; });
+      patch({ homework: homeworkStatus, homeworkCompletedAt });
+    },
+    hideHomeworkIds: (ids) => patch({ hiddenHomeworkIds: [...new Set([...state.hiddenHomeworkIds, ...ids])] }),
+    restoreHiddenHomework: () => patch({ hiddenHomeworkIds: [] }),
     choiceGroups,
     appointments,
     toggleSidebar: () => patch({ sidebarCollapsed: !state.sidebarCollapsed }),

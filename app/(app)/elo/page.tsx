@@ -7,7 +7,9 @@ import { useApp } from "@/app/providers";
 import { Pill, ProgressBar } from "@/components/ui/Primitives";
 import { daysUntil, relativeDeadline, shortDate } from "@/lib/format";
 import { toast } from "@/components/ui/Toaster";
-import type { EloStatus } from "@/lib/types";
+import { downloadMagisterFile } from "@/lib/api/magister";
+import { SubjectBadge } from "@/components/ui/SubjectBadge";
+import type { EloStatus, StudyGuideAttachment } from "@/lib/types";
 
 function Markdown({ text }: { text: string }) {
   return (
@@ -36,6 +38,21 @@ export default function EloPage() {
   const assignments = data.eloAssignments;
   const openCount = assignments.filter((a) => a.status === "open").length;
   const note = state.notes[noteSubject] ?? "";
+
+  /** Opent de echte bijlage via de schoolproxy, of downloads de tekstvoorlooper. */
+  const openAttachment = async (attachment: StudyGuideAttachment) => {
+    const config = { subdomain: state.connection.magisterSchool, token: state.connection.magisterToken };
+    if (attachment.url) {
+      try {
+        await downloadMagisterFile(config, attachment.url, attachment.name);
+        toast("Leermiddel gedownload", "success", attachment.name);
+        return;
+      } catch (error) {
+        toast("Leermiddel niet direct beschikbaar", "warning", error instanceof Error ? error.message : "Open het portaal via de knop eronder.");
+      }
+    }
+    toast("Geen directe link", "info", "Deze schoolpubliceert het leermiddel alleen in het schoolportaal.");
+  };
 
   const download = (name: string, content: string) => {
     const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
@@ -71,7 +88,7 @@ export default function EloPage() {
               <motion.div key={g.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="panel overflow-hidden">
                 <button onClick={() => setExpanded(isOpen ? null : g.id)} className="flex w-full items-center gap-3 p-4 text-left">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold text-white" style={{ background: subject.color }}>{subject.code}</span>
-                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-900 dark:text-white/90">{g.title}</p><p className="text-[10px] text-slate-400">{subject.name} · week {g.week} · bijgewerkt {shortDate(g.updatedAt)}</p></div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-900 dark:text-white/90">{g.title}</p><p className="flex items-center gap-1 text-[10px] text-slate-400"><SubjectBadge subjectId={subject.id} /> · week {g.week} · bijgewerkt {shortDate(g.updatedAt)}</p></div>
                   <Pill tone="accent">week {g.week}</Pill><ChevronDown size={15} className={`text-slate-300 transition ${isOpen ? "rotate-180" : ""}`} />
                 </button>
                 {isOpen && (
@@ -80,9 +97,10 @@ export default function EloPage() {
                     <div className="space-y-1.5">{g.goals.map((goal) => <p key={goal} className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-white/60"><CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-400" />{goal}</p>)}</div>
                     <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Bijlagen</p>
                     <div className="flex flex-wrap gap-2">{g.attachments.map((a) => (
-                      <button key={a} onClick={() => download(a, `MagisterPro — ${g.title}\n\nVak: ${subject.name}\nWeek: ${g.week}\n\nLeerdoelen:\n${g.goals.map((x) => `- ${x}`).join("\n")}\n\nBijlage: ${a}`)}
-                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-medium text-slate-600 transition hover:border-accent/40 hover:text-accent dark:border-white/10 dark:text-white/60"><Paperclip size={11} />{a}<Download size={11} /></button>
-                    ))}</div>
+                      <button key={a.id} onClick={() => void openAttachment(a)} title={a.url ? "Download via je schoolkoppeling" : "Alleen via het schoolportaal beschikbaar"}
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-medium text-slate-600 transition hover:border-accent/40 hover:text-accent dark:border-white/10 dark:text-white/60"><Paperclip size={11} />{a.name}<Download size={11} /></button>
+                    ))}
+                    {g.attachments.length === 0 && <p className="text-[10px] text-slate-400">Geen bijlagen in deze studiewijzer.</p>}</div>
                     <button onClick={() => { setTab("notes"); setNoteSubject(subject.id); setDraft(state.notes[subject.id] ?? ""); }} className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-accent">Open vak-notities <span>→</span></button>
                   </motion.div>
                 )}
@@ -100,9 +118,17 @@ export default function EloPage() {
             return (
               <motion.div key={e.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="panel flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold text-white" style={{ background: subject.color }}>{subject.code}</span>
-                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-bold text-slate-900 dark:text-white/90">{e.title}</p>{e.isNew && <span className="new-badge">Nieuw</span>}<Pill tone={tone}>{e.status === "open" ? "Nog in te leveren" : e.status === "submitted" ? "Ingeleverd" : "Beoordeeld"}</Pill></div>
+                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-bold text-slate-900 dark:text-white/90">{e.title}</p><SubjectBadge subjectId={subject.id} className="!text-[10px]" />{e.isNew && <span className="new-badge">Nieuw</span>}<Pill tone={tone}>{e.status === "open" ? "Nog in te leveren" : e.status === "submitted" ? "Ingeleverd" : "Beoordeeld"}</Pill></div>
                   <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">{e.description}</p>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-400"><span className="flex items-center gap-1"><CalendarClock size={11} />{shortDate(e.deadline)} · {relativeDeadline(e.deadline)}</span><span className="flex items-center gap-1"><Paperclip size={11} />{e.attachmentCount} bijlagen</span>{e.grade !== undefined && <span className="mono font-bold text-emerald-400">cijfer {e.grade.toFixed(1)}</span>}</div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-400"><span className="flex items-center gap-1"><CalendarClock size={11} />{shortDate(e.deadline)} · {relativeDeadline(e.deadline)}</span><span className="flex items-center gap-1"><Paperclip size={11} />{e.attachments.length || e.attachmentCount} bijlagen</span>{e.grade !== undefined && <span className="mono font-bold text-emerald-400">cijfer {e.grade.toFixed(1)}</span>}</div>
+                  {e.attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {e.attachments.map((a) => (
+                        <button key={a.id} onClick={() => void openAttachment(a)} title={a.url ? "Download via je schoolkoppeling" : "Alleen via het schoolportaal beschikbaar"}
+                          className="flex items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/[0.06] px-2 py-1 text-[10px] font-semibold text-accent transition hover:bg-accent/15"><Paperclip size={10} />{a.name}<Download size={10} /></button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-1.5">
                   {e.status === "open" ? (

@@ -6,6 +6,7 @@ import { ShieldCheck, AlertOctagon, Scale, Sigma, Lightbulb, CheckCircle2, XCirc
 import { useApp } from "@/app/providers";
 import { examCheck, formatGrade, deficitFor, compensationFor } from "@/lib/calculations/grades";
 import { Pill, ProgressBar } from "@/components/ui/Primitives";
+import { SubjectBadge } from "@/components/ui/SubjectBadge";
 import Link from "next/link";
 
 export function ExamChecker() {
@@ -49,8 +50,8 @@ export function ExamChecker() {
               return (
                 <div key={r.subjectId} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-white/[0.08]">
                   <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
-                  <span className="flex-1 text-xs text-slate-700 dark:text-white/75">{s.name}</span>
-                  <span className="mono text-[10px] text-slate-400">{formatGrade(r.raw)} →</span>
+                  <SubjectBadge subjectId={s.id} label={s.name} className="min-w-0 flex-1 !text-xs !font-semibold !text-slate-700 dark:!text-white/75" />
+                  <span className="mono text-[10px] text-slate-400">{r.count}× {formatGrade(r.raw)} →</span>
                   <span className={`mono text-lg font-bold ${r.rounded >= 6 ? "text-emerald-400" : r.rounded === 5 ? "text-amber-400" : "text-rose-400"}`}>{r.rounded}</span>
                   {ok ? <CheckCircle2 size={15} className="text-emerald-400" /> : <XCircle size={15} className="text-rose-400" />}
                 </div>
@@ -78,7 +79,7 @@ export function ExamChecker() {
               if (!def && !comp) return null;
               return (
                 <div key={r.subjectId} className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500 dark:text-white/50">{s.name}</span>
+                  <SubjectBadge subjectId={s.id} className="!text-[11px] !text-slate-500 dark:!text-white/50" />
                   <span className={`mono font-semibold ${def ? "text-rose-400" : "text-emerald-400"}`}>{def ? `−${def}` : `+${comp}`}</span>
                 </div>
               );
@@ -100,7 +101,7 @@ export function ExamChecker() {
                 const s = data.subjects.find((x) => x.id === tip.subjectId)!;
                 return (
                   <motion.div key={tip.subjectId} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }} className="rounded-xl border border-slate-200 p-3 dark:border-white/[0.08]">
-                    <div className="mb-1 flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: s.color }} /><span className="flex-1 text-xs font-bold text-slate-800 dark:text-white/85">{s.name}</span><Pill tone="accent">+{formatGrade(tip.gain)} rendement</Pill></div>
+                    <div className="mb-1 flex items-center gap-2"><SubjectBadge subjectId={s.id} label={s.name} className="min-w-0 flex-1 !text-xs !font-bold !text-slate-800 dark:!text-white/85" /><Pill tone="accent">+{formatGrade(tip.gain)} rendement</Pill></div>
                     <p className="text-[11px] leading-relaxed text-slate-500 dark:text-white/45">{tip.text}</p>
                   </motion.div>
                 );
@@ -118,7 +119,8 @@ export function ExamChecker() {
             const s = data.subjects.find((x) => x.id === r.subjectId)!;
             return (
               <div key={r.subjectId} className="bg-white p-3 dark:bg-[#0d0d15]">
-                <p className="truncate text-[10px] text-slate-400">{s.name}</p>
+                <SubjectBadge subjectId={s.id} className="!text-[10px] !text-slate-400" />
+                <p className="text-[9px] text-slate-400">{r.count} cijfers</p>
                 <div className="mt-1 flex items-baseline justify-between">
                   <span className="mono text-lg font-bold text-slate-900 dark:text-white">{r.rounded}</span>
                   <span className="mono text-[10px] text-slate-400">({formatGrade(r.raw)})</span>

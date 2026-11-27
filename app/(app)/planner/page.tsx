@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ListTodo, Columns3, CalendarRange, Plus, ChevronDown, CheckCircle2, Circle,
   Clock3, Timer, Ban, X, Sparkles, ArrowRight, GripVertical, BookOpen, Flag,
+  CheckSquare, Square, EyeOff, RotateCcw,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { generateStudyPlan, type StudyPlanDay } from "@/lib/calculations/planner";
@@ -13,6 +14,7 @@ import { daysUntil, relativeDeadline, shortDate, timeLabel } from "@/lib/format"
 import { Pill, ProgressBar } from "@/components/ui/Primitives";
 import { Modal } from "@/components/ui/Modal";
 import { toast } from "@/components/ui/Toaster";
+import { SubjectBadge } from "@/components/ui/SubjectBadge";
 import type { HomeworkStatus, Homework } from "@/lib/types";
 
 type Tab = "kanban" | "lijst" | "plan";
@@ -35,10 +37,16 @@ function PlannerView() {
   const [blockStart, setBlockStart] = useState("16:00");
   const [blockEnd, setBlockEnd] = useState("18:00");
   const [dragOver, setDragOver] = useState<HomeworkStatus | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [showPast, setShowPast] = useState(false);
 
   useEffect(() => { if (params.get("add") === "1") setAddOpen(true); }, [params]);
 
   const homework = useMemo(() => data.homework.filter((h) => filter === "all" || h.subjectId === filter), [data.homework, filter]);
+  const isPast = (h: Homework) => new Date(h.due).getTime() < now.getTime();
+  const visibleHomework = useMemo(() => homework.filter((h) => showPast || !isPast(h)), [homework, showPast, now]);
+  const pastIds = homework.filter(isPast).map((h) => h.id);
+  const toggleSelected = (id: string) => setSelected((ids) => ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
   const plan = useMemo<StudyPlanDay[]>(() => generateStudyPlan(appointments, state.blockedSlots, data.homework, data.subjects), [appointments, state.blockedSlots, data.homework, data.subjects]);
   const upcomingTests = appointments.filter((a) => a.type === "toets" && new Date(a.end) >= now).slice(0, 6);
 
@@ -56,10 +64,16 @@ function PlannerView() {
       <motion.div layout draggable onDragStart={(e) => (e as unknown as DragEvent).dataTransfer?.setData("text/plain", h.id)} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
         className="group rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-accent/30 dark:border-white/[0.08] dark:bg-white/[0.03]">
         <div className="flex items-start gap-2">
+          <button onClick={() => toggleSelected(h.id)} title="Selecteren voor bulkacties" className={`mt-0.5 shrink-0 transition ${selected.includes(h.id) ? "text-accent" : "text-slate-300 hover:text-accent dark:text-white/20"}`}>
+            {selected.includes(h.id) ? <CheckSquare size={14} /> : <Square size={14} />}
+          </button>
           <GripVertical size={13} className="mt-0.5 shrink-0 cursor-grab text-slate-300 dark:text-white/15" />
           <button onClick={() => setExpanded(isOpen ? null : h.id)} className="min-w-0 flex-1 text-left">
             <div className="flex items-center gap-1.5"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: subject?.color }} /><p className={`truncate text-xs font-bold ${h.status === "done" ? "text-slate-400 line-through" : "text-slate-800 dark:text-white/90"}`}>{h.title}</p></div>
-            <p className="mt-1 truncate text-[10px] text-slate-400">{subject?.name} · {relativeDeadline(h.due, now)}</p>
+            <p className="mt-1 flex items-center gap-1 truncate text-[10px] text-slate-400">
+              {subject ? <SubjectBadge subjectId={subject.id} label={subject.name} /> : "Onbekend vak"} · {relativeDeadline(h.due, now)}
+              {isPast(h) && <span className="font-bold text-amber-400">· verleden</span>}
+            </p>
           </button>
           <ChevronDown size={14} className={`mt-0.5 shrink-0 text-slate-300 transition ${isOpen ? "rotate-180" : ""}`} />
         </div>
@@ -117,8 +131,29 @@ function PlannerView() {
           ))}
         </div>
         <select className="input !w-auto !py-2" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">Alle vakken</option>{data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-        <span className="ml-auto text-[11px] text-slate-400">{homework.filter((h) => h.status === "done").length}/{homework.length} afgerond</span>
+        <button onClick={() => setShowPast(!showPast)} className={`btn ${showPast ? "bg-amber-500/15 text-amber-400" : "btn-secondary"}`}><Clock3 size={13} /> {showPast ? "Verleden zichtbaar" : "Verleden tonen"} ({pastIds.length})</button>
+        <span className="ml-auto text-[11px] text-slate-400">{visibleHomework.filter((h) => h.status === "done").length}/{visibleHomework.length} afgerond</span>
       </div>
+
+      <AnimatePresence>
+        {selected.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-surface-raised/95 p-2.5 shadow-panel backdrop-blur">
+            <span className="mono rounded-lg bg-accent/15 px-2 py-1 text-[11px] font-bold text-accent">{selected.length} geselecteerd</span>
+            <button onClick={() => { app.completeHomeworkIds(selected); toast("Taken afgerond", "success", `${selected.length} taak/taken gemarkeerd als klaar.`); setSelected([]); }} className="btn-primary !py-1.5"><CheckCircle2 size={14} /> Markeer klaar</button>
+            <button onClick={() => { app.hideHomeworkIds(selected); toast("Taken verborgen", "info", "Je kunt ze altijd herstellen."); setSelected([]); }} className="btn-secondary !py-1.5"><EyeOff size={14} /> Verberg</button>
+            <button onClick={() => setSelected(pastIds)} className="btn-secondary !py-1.5"><Clock3 size={14} /> Selecteer verleden</button>
+            <button onClick={() => setSelected([])} className="btn-secondary !py-1.5"><X size={14} /> Annuleren</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {state.hiddenHomeworkIds.length > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-[11px] text-slate-500 dark:border-white/[0.08] dark:text-white/50">
+          <EyeOff size={13} /> {state.hiddenHomeworkIds.length} taak/taken uit zicht
+          <button onClick={() => { app.restoreHiddenHomework(); toast("Taken hersteld", "success"); }} className="ml-auto flex items-center gap-1 font-semibold text-accent"><RotateCcw size={12} /> Herstel alles</button>
+        </div>
+      )}
 
       {/* Aankomende toetsen */}
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -127,7 +162,7 @@ function PlannerView() {
           return (
             <div key={t.id} className="flex shrink-0 items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/[0.05] px-3 py-2">
               <Flag size={13} className="text-rose-400" />
-              <div><p className="text-[11px] font-bold text-slate-800 dark:text-white/85">{s?.short} · {t.toetsType}</p><p className="text-[9px] text-slate-400">{shortDate(t.start)} · {timeLabel(t.start)}</p></div>
+              <div className="min-w-0"><p className="flex items-center gap-1 text-[11px] font-bold text-slate-800 dark:text-white/85">{s ? <SubjectBadge subjectId={s.id} label={s.short} showDot={false} /> : "Onbekend"} · {t.toetsType}</p><p className="text-[9px] text-slate-400">{shortDate(t.start)} · {timeLabel(t.start)}</p></div>
               <Pill tone="red">{daysUntil(t.start, now)}d</Pill>
             </div>
           );
@@ -137,7 +172,7 @@ function PlannerView() {
       {tab === "kanban" && (
         <div className="grid gap-3 md:grid-cols-3">
           {columns.map((col) => {
-            const items = homework.filter((h) => h.status === col.key);
+            const items = visibleHomework.filter((h) => h.status === col.key);
             return (
               <div key={col.key} onDragOver={(e) => { e.preventDefault(); setDragOver(col.key); }} onDragLeave={() => setDragOver(null)}
                 onDrop={(e) => { const id = e.dataTransfer.getData("text/plain"); if (id) { app.setHomeworkStatus(id, col.key); toast("Taak verplaatst", "success", `Naar ${col.label}`); } setDragOver(null); }}
@@ -154,7 +189,7 @@ function PlannerView() {
 
       {tab === "lijst" && (
         <div className="panel divide-y divide-slate-100 dark:divide-white/[0.06]">
-          {[...homework].sort((a, b) => a.due.localeCompare(b.due)).map((h) => <HomeworkCard key={h.id} h={h} />)}
+          {[...visibleHomework].sort((a, b) => a.due.localeCompare(b.due)).map((h) => <HomeworkCard key={h.id} h={h} />)}
         </div>
       )}
 

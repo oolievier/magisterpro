@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MagisterPro — Magister brug & skin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Neemt je echte Magister-sessie over zonder wachtwoord in MagisterPro en voegt een lichte skin toe aan Magister.",
   "permissions": ["storage", "tabs"],
   "host_permissions": [

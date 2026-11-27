@@ -106,7 +106,7 @@ export interface ExamCheck {
   status: ExamStatus;
   label: string;
   summary: string;
-  roundedGrades: { subjectId: string; raw: number; rounded: number; core: boolean }[];
+  roundedGrades: { subjectId: string; raw: number; rounded: number; core: boolean; count: number }[];
   averageRounded: number;
   averageOk: boolean;
   coreOk: boolean;
@@ -130,24 +130,31 @@ export function compensationFor(rounded: number): number {
   return 3;
 }
 
-const CORE_NAMES = ["Nederlands", "Engels", "Wiskunde"];
+const CORE_PATTERNS = [/nederlands/i, /engels/i, /wiskunde/i];
+const EXAM_YEARS = new Set<EducationLevel>(["havo5", "vwo5", "vwo6"]);
 
 export function examCheck(
   subjects: Subject[],
   allGrades: Grade[],
   level: EducationLevel
 ): ExamCheck {
+  // Alleen vakken met echte cijfers tellen mee. Lege PTA-kolommen of vakken
+  // die alleen uit een roosterafspraak komen, mogen de slaagcheck niet vervormen.
   const roundedGrades = subjects
     .filter((s) => s.isExamSubject)
     .map((s) => {
-      const raw = weightedAverage(allGrades.filter((g) => g.subjectId === s.id));
+      const own = allGrades.filter((g) => g.subjectId === s.id && Number.isFinite(g.value) && g.value > 0);
+      const raw = weightedAverage(own);
       return {
         subjectId: s.id,
         raw,
-        rounded: Math.round(raw + Number.EPSILON),
-        core: CORE_NAMES.some((n) => s.name.includes(n)) && s.isCore,
+        // Rapportcijfers worden half-omhoog afgerond, niet banker's rounding.
+        rounded: Math.floor(raw + 0.5),
+        core: CORE_PATTERNS.some((pattern) => pattern.test(s.name)) && s.isCore,
+        count: own.length,
       };
-    });
+    })
+    .filter((r) => r.count > 0);
 
   const coreIssues: string[] = [];
   const coreEntries = roundedGrades.filter((r) => r.core);
@@ -192,15 +199,19 @@ export function examCheck(
   const status: ExamStatus = balanceOk && averageRounded >= 6.4 ? "op-koers" : balanceOk ? "aandacht" : "gevaar";
   const label = status === "op-koers" ? "Ruim op koers" : status === "aandacht" ? "Aandachtspunt" : "Gevarenzone";
 
+  const examYear = EXAM_YEARS.has(level);
+  const baseSummary = status === "op-koers"
+    ? "Je staat er goed voor. Blijf je compensatiepunten behouden."
+    : status === "aandacht"
+      ? "Je haalt net aan de eisen, maar er is weinig marge over."
+      : `Er zijn ${Math.max(0, deficitPoints - compensationPoints)} tekortpunten te veel of een kernvakregeling wordt geschonden.`;
+
   return {
     status,
     label,
-    summary:
-      status === "op-koers"
-        ? "Je staat er goed voor. Blijf je compensatiepunten behouden."
-        : status === "aandacht"
-          ? "Je haalt net aan de eisen, maar er weinig marge over."
-          : `Er zijn ${deficitPoints - compensationPoints} tekortpunten te veel of een kernvakregeling wordt geschonden.`,
+    summary: examYear
+      ? baseSummary
+      : `Tussenstand voor ${level.toUpperCase()} — ${baseSummary} In het examenjaar geldt de definitieve slaag/zak-regeling.`,
     roundedGrades,
     averageRounded: round2(averageRounded),
     averageOk,

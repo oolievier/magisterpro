@@ -1,6 +1,9 @@
 /* ===========================================================================
- * Zermelo Portal API v3 service (server-side).
- * Koppelingscode (12 cijfers) -> permanente access_token via OAuth.
+ * Zermelo Portal API v3/v4 service (server-side).
+ * Koppelingscode (12 cijfers) -> access_token via de eigen OAuth-route.
+ * Inschrijven voor keuzelessen gebeurt via de actie-URL die Zermelo zelf in
+ * liveschedule meegeeft; er is geen vast choices-endpoint (bevestigd in de
+ * echte Zermelo-webclient).
  * ========================================================================= */
 
 export interface ZermeloConfig {
@@ -51,8 +54,19 @@ async function request<T>(
     let data: unknown = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     if (!res.ok) {
-      const error = (data as { message?: string; error?: string })?.message ?? (data as { error?: string })?.error;
-      return { ok: false, status: res.status, error: error ?? `Zermelo gaf status ${res.status}.` };
+      const body = (data ?? {}) as {
+        message?: string; error?: string;
+        response?: { message?: string; error?: string };
+      };
+      const error = body.message ?? body.error ?? body.response?.message ?? body.response?.error;
+      const expired = res.status === 401 || /expired|verlopen|unauthorized/i.test(String(error ?? ""));
+      return {
+        ok: false,
+        status: res.status,
+        error: expired
+          ? "Je Zermelo-sessie is verlopen. Maak een nieuwe koppelingscode aan via Instellingen."
+          : error ?? `Zermelo gaf status ${res.status}.`,
+      };
     }
     return { ok: true, status: res.status, data: data as T };
   } catch (e) {
@@ -103,6 +117,8 @@ export async function exchangeZermeloCode(
 
 export interface ZermeloAppointment {
   id: number;
+  /** Stabilere instantie-ID die Zermelo voor keuzelessen gebruikt. */
+  appointmentInstance?: number;
   start: number;
   end: number;
   subject?: string;
@@ -114,47 +130,117 @@ export interface ZermeloAppointment {
   appointmentType?: string;
   cancelled?: boolean;
   description?: string;
+  remark?: string;
   capacity?: number;
   enrolled?: number;
   choiceGroupId?: number;
+  optional?: boolean;
+}
+
+/** Actie zoals de echte webclient die tegenkomt in liveschedule. */
+export interface ZermeloScheduleAction {
+  code?: number;
+  allowed?: boolean;
+  /** Server-gegeven actie-URL; nooit zelf opbouwen. */
+  post?: string;
+  status?: { code?: number; nl?: string }[];
+  appointment?: { appointmentInstance?: number };
+}
+
+export interface ZermeloLiveScheduleItem extends ZermeloAppointment {
+  actions?: ZermeloScheduleAction[];
+}
+
+export interface ZermeloLiveSchedule {
+  week?: number;
+  user?: string;
+  appointments?: ZermeloLiveScheduleItem[];
+  replacements?: unknown[];
+  status?: unknown[];
+}
+
+export interface ZermeloMe {
+  code?: string;
+  firstName?: string;
+  lastName?: string;
+  prefix?: string;
+  displayName?: string;
+}
+
+const APPOINTMENT_FIELDS = [
+  "id", "appointmentInstance", "start", "end", "subject", "subjects",
+  "teacher", "teachers", "locationOfBranch", "locations", "appointmentType",
+  "cancelled", "description", "remark", "capacity", "enrolled", "optional",
+].join(",");
+
+/** Valideert een door Zermelo geleverde actie-URL voordat we hem posten. */
+export function actionPath(config: ZermeloConfig, post: string): string {
+  if (!post) throw new Error("Deze Zermelo-actie heeft geen post-URL.");
+  let url: URL;
+  try {
+    url = new URL(post, `${zermeloBase(config.subdomain)}/`);
+  } catch {
+    throw new Error("Ongeldige Zermelo-actie-URL.");
+  }
+  if (url.origin !== new URL(zermeloBase(config.subdomain)).origin) {
+    throw new Error("Zermelo-actie-URL wijst naar een ander domein.");
+  }
+  const path = url.pathname.replace(/^\/+/, "");
+  if (!/^api\/v[34]\//.test(path)) throw new Error("Zermelo-actiepad niet toegestaan.");
+  return `${path}${url.search}`;
 }
 
 export const zermelo = {
   testConnection: (config: ZermeloConfig) => request<{ response?: { status?: number } }>(config, "api/v3/users/~me"),
 
+  getMe<T = ZermeloMe>(config: ZermeloConfig) {
+    return request<T>(config, "api/v3/users/~me?fields=code,firstName,lastName,prefix,displayName");
+  },
+
   getAppointments<T = ZermeloAppointment[]>(config: ZermeloConfig, from: number, to: number) {
-    const q = new URLSearchParams({
-      start: String(from),
-      end: String(to),
-      fields: "id,start,end,subject,subjects,teacher,teachers,locationOfBranch,locations,appointmentType,cancelled,description,capacity,enrolled,choiceGroupId",
-    });
+    const q = new URLSearchParams({ start: String(from), end: String(to), fields: APPOINTMENT_FIELDS });
     return request<T>(config, `api/v3/appointments?${q}`);
   },
 
-  getLiveSchedule<T = unknown>(config: ZermeloConfig) {
-    return request<T>(config, "api/v3/liveschedule");
+  /** Liveschedule bevat de actie-URL's die de webclient gebruikt om in te schrijven. */
+  getLiveScheduleForStudent(config: ZermeloConfig, studentCode: string, week: number) {
+    const q = new URLSearchParams({
+      student: studentCode,
+      week: String(week),
+      fields: "week,user,appointments,replacements,status",
+    });
+    return request<ZermeloLiveSchedule>(config, `api/v3/liveschedule?${q}`);
   },
 
   getUsers<T = unknown[]>(config: ZermeloConfig) {
     return request<T>(config, "api/v3/users");
   },
 
-  /**
-   * Inschrijven/wisselen voor een keuzeles. Zermelo publiceert hiervoor geen
-   * officieel gedocumenteerd student-endpoint; de proxy forwardt het verzoek
-   * naar de school-instance. Alleen beschikbaar met een echte Zermelo-token.
-   */
-  enroll(config: ZermeloConfig, groupId: string, optionId: string) {
-    const rawGroup = groupId.replace(/^kg-/, "");
-    const rawOption = optionId.replace(/^zer-/, "");
-    return request(config, `api/v3/choices/${encodeURIComponent(rawGroup)}/enrollments`, {
-      method: "POST",
-      body: JSON.stringify({ appointmentId: Number(rawOption) }),
-    });
-  },
-
-  unenroll(config: ZermeloConfig, groupId: string) {
-    const rawGroup = groupId.replace(/^kg-/, "");
-    return request(config, `api/v3/choices/${encodeURIComponent(rawGroup)}/enrollments/me`, { method: "DELETE" });
+  /** POST naar de actie-URL van Zermelo, met lege body — ook voor uitschrijven. */
+  postScheduleAction(config: ZermeloConfig, post: string) {
+    let path: string;
+    try { path = actionPath(config, post); }
+    catch (e) { return Promise.resolve({ ok: false, status: 400, error: e instanceof Error ? e.message : "Ongeldige actie." }); }
+    return request(config, path, { method: "POST", body: "" });
   },
 };
+
+/** Zoekt de actie bij een appointmentInstance (of indirect via action.appointment). */
+export function findChoiceAction(
+  schedule: ZermeloLiveSchedule | null | undefined,
+  instance: number | string,
+  preferredCodes: number[] = []
+): ZermeloScheduleAction | undefined {
+  if (!schedule?.appointments) return undefined;
+  const item = schedule.appointments.find((a) =>
+    Number(a.appointmentInstance ?? a.id) === Number(instance)
+    || a.actions?.some((action) => Number(action.appointment?.appointmentInstance) === Number(instance))
+  );
+  const actions = (item?.actions ?? []).filter((a) => Boolean(a.post) && a.allowed !== false);
+  if (!actions.length) return undefined;
+  for (const code of preferredCodes) {
+    const match = actions.find((a) => a.code === code || a.status?.some((s) => s.code === code));
+    if (match) return match;
+  }
+  return actions.find((a) => a.allowed === true) ?? actions[0];
+}

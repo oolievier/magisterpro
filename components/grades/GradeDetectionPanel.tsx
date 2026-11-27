@@ -94,6 +94,16 @@ export function GradeDetectionPanel() {
             <ul className="mono mt-1 space-y-0.5 text-[10px] opacity-80">{d.errors.map((error) => <li key={error}>{error}</li>)}</ul>
           </div>
         )}
+        {d.sources.length > 0 && (
+          <div className="mt-3 rounded-xl border border-slate-200 p-3 text-[11px] text-slate-500 dark:border-white/[0.08] dark:text-white/50">
+            <p className="font-bold">Opgehaald per aanmelding / schooljaar:</p>
+            <ul className="mono mt-1 space-y-0.5 text-[10px]">
+              {d.sources.map((source) => (
+                <li key={source.path}>{source.rows} rijen · {source.path}{source.error ? ` · ${source.error}` : ""}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className="panel overflow-hidden">

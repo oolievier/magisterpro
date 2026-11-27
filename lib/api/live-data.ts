@@ -383,7 +383,7 @@ export function emptyAppData(): AppData {
   };
   return {
     subjects: [], teachers: [], grades: [], gradeCandidates: [],
-    gradeDiagnostics: { raw: 0, accepted: 0, review: 0, dropped: 0, errors: [] },
+    gradeDiagnostics: { raw: 0, accepted: 0, review: 0, dropped: 0, errors: [], sources: [] },
     rawGradeRows: [],
     ptaColumns: [], appointments: [],
     choiceGroups: [], homework: [], studyGuides: [], eloAssignments: [],
@@ -418,51 +418,85 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   const from = asLocalISO(new Date(Date.now() - 150 * 86_400_000));
   const to = asLocalISO(new Date(Date.now() + 180 * 86_400_000));
 
-  // Scholen gebruiken niet allemaal hetzelfde cijferpad. Probeer de bekende
-  // varianten en voeg de unieke rijen samen, zodat één afwijkend endpoint niet
-  // betekent dat de Cijferstudio leeg blijft.
+  // Cijfers hangen in Magister aan een aanmelding (schooljaar/profiel), niet
+  // aan de persoon. Alleen de hoofdaanmelding ophalen laat dus alle andere
+  // jaren/profielen weg. We pakken daarom élke aanmelding en lopen ook de
+  // pagina's af, met fallback-paden voor scholen met een afwijkende API.
   const gradeFetchErrors: string[] = [];
-  const fetchGradesRobust = async () => {
-    if (!magisterEnabled) return null;
-    const paths = [
-      `api/aanmeldingen/${aanmeldingId}/cijfers?top=400`,
-      `api/personen/${personId}/cijfers?top=400`,
-      `api/leerlingen/${personId}/cijfers?top=400`,
-      `api/aanmeldingen/${personId}/cijfers?top=400`,
-    ].filter((path) => !path.includes("undefined") && !path.includes("/undefined/"));
-    const rows: Row[] = [];
-    const seen = new Set<string>();
-    let lastStatus = 0;
-    for (const path of paths) {
-      const res = await magister.getGradesFromPath(config, path);
-      lastStatus = res.status;
-      if (!res.ok) {
-        gradeFetchErrors.push(`${path.replace("?top=400", "")} → HTTP ${res.status}${res.error ? `: ${res.error}` : ""}`);
-        continue;
-      }
-      for (const row of list(res.data)) {
-        const key = JSON.stringify([
-          pick(row, "CijferId", "cijferId", "id", "Id"),
-          pick(row, "DatumIngevoerd", "datumIngevoerd", "Datum", "datum"),
-          pick(row, "CijferStr", "waarde", "Cijfer"),
-        ]);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        rows.push(row);
-      }
-    }
-    return { ok: rows.length > 0 || paths.length === 0, data: rows, status: lastStatus };
+  const gradeSources: { path: string; rows: number; error?: string }[] = [];
+  const enrollmentIds = [...new Set([
+    ...enrollments.map((e) => pick(e, "id", "Id")),
+    aanmeldingId,
+  ])].map(String).filter((id) => id && id !== "undefined" && id !== "null");
+
+  const gradeKey = (row: Row): string => {
+    const column = (pick(row, "kolom", "Kolom", "CijferKolom") ?? {}) as Row;
+    return JSON.stringify([
+      pick(row, "CijferId", "cijferId", "id", "Id"),
+      pick(column, "id", "Id", "nummer", "Nummer"),
+      pick(row, "DatumIngevoerd", "datumIngevoerd", "ingevoerdOp", "Datum", "datum"),
+      pick(row, "CijferStr", "waarde", "Cijfer", "cijferGetal"),
+    ]);
   };
 
+  const fetchGradePath = async (path: string, rows: Row[], seen: Set<string>) => {
+    let added = 0;
+    let skip = 0;
+    for (let page = 0; page < 40; page++) {
+      const separator = path.includes("?") ? "&" : "?";
+      const res = await magister.getGradesFromPath(config, `${path}${separator}top=1000&skip=${skip}`);
+      if (!res.ok) {
+        gradeFetchErrors.push(`${path} → HTTP ${res.status}${res.error ? `: ${res.error}` : ""}`);
+        gradeSources.push({ path, rows: added, error: `HTTP ${res.status}` });
+        return;
+      }
+      const pageRows = list(res.data);
+      const before = rows.length;
+      pageRows.forEach((row) => {
+        const key = gradeKey(row);
+        if (seen.has(key)) return;
+        seen.add(key);
+        rows.push(row);
+        added++;
+      });
+      if (!pageRows.length || rows.length === before) break; // geen nieuwe pagina meer
+      skip += pageRows.length;
+    }
+    gradeSources.push({ path, rows: added });
+  };
+
+  const fetchGradesRobust = async () => {
+    if (!magisterEnabled) return null;
+    const rows: Row[] = [];
+    const seen = new Set<string>();
+    const paths = enrollmentIds.map((id) => `api/aanmeldingen/${id}/cijfers`);
+    for (const path of paths) await fetchGradePath(path, rows, seen);
+    // Fallbacks alleen als de gebruikelijke paden niets opleverden: op deze
+    // scholen zijn het 404/403's en die ruis willen we niet in de diagnose.
+    if (!rows.length) {
+      const fallbacks = [
+        ...enrollmentIds.map((id) => `api/personen/${personId}/aanmeldingen/${id}/cijfers`),
+        ...(personId ? [`api/personen/${personId}/cijfers`, `api/leerlingen/${personId}/cijfers`] : []),
+      ];
+      for (const path of fallbacks) await fetchGradePath(path, rows, seen);
+    }
+    return { ok: rows.length > 0 || paths.length === 0, data: rows, status: 200 };
+  };
+
+  // Vaknamen (en studievakId-koppelingen) staan per aanmelding; die van alle
+  // jaren zijn nodig om ook oudere cijfers aan een vak te kunnen hangen.
+  const subjectResultsPromise = Promise.allSettled(enrollmentIds.map((id) =>
+    magisterEnabled && personId ? magister.getEnrollmentSubjects(config, personId, id) : Promise.resolve(null)
+  ));
+
   const [gradesRes, appointmentsRes, absencesRes, messagesRes, assignmentsRes, guidesRes,
-    enrollmentSubjectsRes, activitiesRes, zermeloRes, zermeloUsersRes] = await Promise.allSettled([
+    activitiesRes, zermeloRes, zermeloUsersRes] = await Promise.allSettled([
     fetchGradesRobust(),
     magisterEnabled && personId ? magisterAppointmentsChunked(config, personId, Date.now()) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getAbsences(config, personId, from, to) : Promise.resolve(null),
     magisterEnabled ? magister.getMessages(config, 60) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getAssignments(config, personId) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getStudyGuides(config, personId) : Promise.resolve(null),
-    magisterEnabled && personId ? magister.getEnrollmentSubjects(config, personId, aanmeldingId) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getActivities(config, personId) : Promise.resolve(null),
     connection.zermeloToken && connection.zermeloSubdomain
       ? zermeloAppointmentsChunked(
@@ -488,7 +522,11 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   const rawMessages = list(okData(messagesRes));
   const rawAssignments = list(okData(assignmentsRes));
   const rawGuides = list(okData(guidesRes));
-  const rawSubjects = list(okData(enrollmentSubjectsRes));
+  const subjectResults = await subjectResultsPromise;
+  const rawSubjects = subjectResults.flatMap((res) => {
+    if (res.status !== "fulfilled" || !res.value?.ok) return [];
+    return list(res.value.data);
+  });
   const rawActivities = list(okData(activitiesRes));
   const zermeloResult = value(zermeloRes);
   const rawZermelo = zermeloResult?.ok ? list(zermeloResult.data) : [];
@@ -688,6 +726,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     review: gradeCandidates.length,
     dropped: droppedGrades,
     errors: gradeFetchErrors,
+    sources: gradeSources,
   };
 
   const ptaColumns: PtaColumn[] = Object.values(grades.reduce<Record<string, Grade[]>>((acc, g) => {

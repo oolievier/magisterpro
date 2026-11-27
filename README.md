@@ -18,7 +18,7 @@ Een "Student Operating System" voor Nederlandse middelbare scholieren: een moder
 Er is **geen demo-modus**: de app begint op `/login` en toont uitsluitend echte schoolgegevens.
 
 - **Magister** — in de native MagisterPro-app open je de échte Magister-loginpagina (inclusief MFA en school-SSO). De app vangt de `m6loapp://oauth2redirect/`-redirect op en wisselt de code server-side om. In een gewone browser blijft de QR-koppeling met een companion-app beschikbaar. Je wachtwoord komt nooit in MagisterPro terecht en er is geen geregistreerde webclient nodig.
-- **Zermelo** — optioneel koppelen met de 12-cijferige koppelingscode uit de Zermelo-portal; die wordt via `/api/auth/zermelo` omgezet naar een access_token. Daarmee werken keuzelessen (KWT), roosterwijzigingen en live bezetting.
+- **Zermelo** — koppelen met de 12-cijferige koppelingscode uit de Zermelo-portal; die wordt via `/api/auth/zermelo` omgezet naar een access_token. **Zermelo-only is volledig ondersteund**: je kunt de app gebruiken zonder Magister-account, met rooster, vakken, keuzelessen (KWT), roosterwijzigingen en live bezetting. Magister kun je later optioneel toevoegen voor cijfers, PTA en ELO. De Zermelo-access_token wordt apart van de app-state opgeslagen (`magisterpro-zermelo-key-v1`) en automatisch hersteld na uitloggen; in Instellingen kun je de sleutel ook handmatig bewaren of verwijderen.
 
 Alle API-calls gaan via server-side CORS-proxy's (`/api/magister/[...path]` en `/api/zermelo/[...path]`) en via `/api/auth/...` voor de login. Tokens worden alleen als request-header meegestuurd en blijven in de browser (`localStorage`). Zonder koppeling is er geen data zichtbaar.
 

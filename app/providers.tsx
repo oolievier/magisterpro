@@ -9,18 +9,33 @@ import type {
 } from "@/lib/types";
 
 const STORAGE_KEY = "magisterpro-state-v2";
+/** Zermelo-sleutel staat apart van de app-state, zodat uitloggen hem niet wist. */
+const ZERMELO_KEY_STORAGE = "magisterpro-zermelo-key-v1";
 
-/** Vertaalt ruwe Magister/OAuth-fouten naar bruikbare Nederlandse tekst. */
-function friendlyMagisterError(message: string): string {
+interface SavedZermeloKey {
+  subdomain: string;
+  token: string;
+  expiresAt: number;
+  studentCode: string;
+}
+
+/** Vertaalt ruwe school-API-fouten naar bruikbare Nederlandse tekst. */
+function friendlyLiveError(message: string, zermeloOnly = false): string {
   const text = message.toLowerCase();
-  if (text.includes("invalid_grant") || text.includes("session_expired") || text.includes("expired token")) {
-    return "Je Magister-sessie is verlopen. Ververs de echte Magister-pagina met de extensie actief, of log opnieuw in via de Magister-knop.";
+  if (text.includes("invalid_grant") || text.includes("session_expired") || text.includes("expired token") || text.includes("verlopen")) {
+    return zermeloOnly
+      ? "Je Zermelo-sessie is verlopen. Maak een nieuwe koppelingscode aan via je schoolportaal."
+      : "Je Magister-sessie is verlopen. Ververs de echte Magister-pagina met de extensie actief, of log opnieuw in via de Magister-knop.";
   }
-  if (text.includes("geen school-subdomain") || text.includes("schoolhost")) {
-    return "Vul je Magister-school in bij Instellingen (bijv. schoolnaam.magister.net).";
+  if (text.includes("geen school-subdomain") || text.includes("schoolhost") || text.includes("zermelo-school")) {
+    return zermeloOnly
+      ? "Vul je Zermelo-school in bij Instellingen (bijv. schoolnaam.zportal.nl)."
+      : "Vul je Magister-school in bij Instellingen (bijv. schoolnaam.magister.net).";
   }
   if (text.includes("unauthorized") || text.includes("401")) {
-    return "Magister accepteert deze sessie niet meer. Log opnieuw in via de echte Magister-pagina.";
+    return zermeloOnly
+      ? "Zermelo accepteert deze sessie niet meer. Maak een nieuwe koppelingscode aan via je schoolportaal."
+      : "Magister accepteert deze sessie niet meer. Log opnieuw in via de echte Magister-pagina.";
   }
   return message;
 }
@@ -88,6 +103,9 @@ interface AppContextValue {
   refresh: () => Promise<void>;
   logout: () => void;
   resetLocalData: () => void;
+  savedZermeloKey: boolean;
+  saveZermeloKey: () => boolean;
+  forgetZermeloKey: () => void;
   setTheme: (t: ThemeName) => void;
   setAccent: (a: AccentName) => void;
   enroll: (groupId: string, optionId: string) => void;
@@ -135,19 +153,40 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [savedZermeloKey, setSavedZermeloKey] = useState(false);
   const loadingRef = useRef(false);
   const connectionRef = useRef(state.connection);
 
   useEffect(() => { connectionRef.current = state.connection; }, [state.connection]);
 
   useEffect(() => {
+    let next: PersistedState = defaultState;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<PersistedState>;
-        setState({ ...defaultState, ...parsed, connection: { ...defaultConnection, ...(parsed.connection ?? {}) } });
+        next = { ...defaultState, ...parsed, connection: { ...defaultConnection, ...(parsed.connection ?? {}) } };
+      }
+      // Aparte sleutel herstelt de Zermelo-koppeling ook na uitloggen of reset.
+      const savedRaw = localStorage.getItem(ZERMELO_KEY_STORAGE);
+      if (savedRaw) {
+        const saved = JSON.parse(savedRaw) as SavedZermeloKey;
+        if (saved.token && saved.subdomain) {
+          setSavedZermeloKey(true);
+          next = {
+            ...next,
+            connection: {
+              ...next.connection,
+              zermeloSubdomain: next.connection.zermeloSubdomain || saved.subdomain,
+              zermeloToken: next.connection.zermeloToken || saved.token,
+              zermeloTokenExpiresAt: next.connection.zermeloTokenExpiresAt || saved.expiresAt || 0,
+              zermeloStudentCode: next.connection.zermeloStudentCode || saved.studentCode || "",
+            },
+          };
+        }
       }
     } catch { /* corrupte cache negeren */ }
+    setState(next);
     setMounted(true);
     const timer = setInterval(() => setNow(new Date()), 20_000);
     return () => clearInterval(timer);
@@ -159,6 +198,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
     if (!mounted) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* quota negeren */ }
   }, [state, mounted]);
+
+  /** Zermelo-sleutel automatisch apart bewaren zodat hij niet verloren gaat. */
+  useEffect(() => {
+    if (!mounted) return;
+    const c = state.connection;
+    if (!c.zermeloToken || !c.zermeloSubdomain) return;
+    try {
+      localStorage.setItem(ZERMELO_KEY_STORAGE, JSON.stringify({
+        subdomain: c.zermeloSubdomain,
+        token: c.zermeloToken,
+        expiresAt: c.zermeloTokenExpiresAt,
+        studentCode: c.zermeloStudentCode,
+      } satisfies SavedZermeloKey));
+      setSavedZermeloKey(true);
+    } catch { /* quota negeren */ }
+  }, [mounted, state.connection.zermeloToken, state.connection.zermeloSubdomain, state.connection.zermeloTokenExpiresAt, state.connection.zermeloStudentCode]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -223,61 +278,65 @@ export function Providers({ children }: { children: React.ReactNode }) {
   /** Haalt alle data uit de echte koppelingen; vernieuwt een verlopen token. */
   const refresh = useCallback(async () => {
     const connection = connectionRef.current;
-    if (!connection.magisterToken) { setLiveData(emptyAppData()); return; }
+    const hasMagister = Boolean(connection.magisterToken && connection.magisterSchool);
+    const hasZermelo = Boolean(connection.zermeloToken && connection.zermeloSubdomain);
+    if (!hasMagister && !hasZermelo) { setLiveData(emptyAppData()); return; }
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     setLoadError("");
     try {
-      let token = connection.magisterToken;
+      let token = connection.magisterToken || "";
 
-      if (!connection.magisterSchool) {
-        throw new Error("Vul je Magister-school in bij Instellingen (bijv. schoolnaam.magister.net).");
+      if (hasMagister) {
+        // Een extensiesessie komt van het accountcentrum en mag nooit via de
+        // algemene tokenendpoint vernieuwd worden: dat gaf invalid_grant.
+        if (
+          connection.magisterSessionSource === "extension" &&
+          connection.magisterExpiresAt &&
+          Date.now() > connection.magisterExpiresAt - 60_000
+        ) {
+          window.dispatchEvent(new Event("magisterpro:request-extension-session"));
+          throw new Error("Je Magister-sessie is verlopen. Ververs de echte Magister-pagina met de extensie actief, en klik daarna op Gegevens vernieuwen.");
+        }
+
+        if (
+          connection.magisterSessionSource !== "extension" &&
+          connection.magisterExpiresAt &&
+          Date.now() > connection.magisterExpiresAt - 60_000 &&
+          connection.magisterRefreshToken
+        ) {
+          const res = await fetch("/api/auth/magister/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              grant: "refresh",
+              refreshToken: connection.magisterRefreshToken,
+              clientId: connection.magisterClientId || undefined,
+            }),
+          });
+          const json = await res.json() as { token?: string; refreshToken?: string; expiresIn?: number; message?: string };
+          if (!res.ok || !json.token) throw new Error(json.message ?? "Je Magister-sessie is verlopen. Log opnieuw in.");
+          token = json.token;
+          setState((s) => ({
+            ...s,
+            connection: {
+              ...s.connection,
+              magisterToken: token,
+              magisterRefreshToken: json.refreshToken ?? s.connection.magisterRefreshToken,
+              magisterExpiresAt: Date.now() + (json.expiresIn ?? 3600) * 1000,
+            },
+          }));
+        }
       }
 
-      // Een extensiesessie komt van het accountcentrum en mag nooit via de
-      // algemene tokenendpoint vernieuwd worden: dat gaf invalid_grant.
-      if (
-        connection.magisterSessionSource === "extension" &&
-        connection.magisterExpiresAt &&
-        Date.now() > connection.magisterExpiresAt - 60_000
-      ) {
-        window.dispatchEvent(new Event("magisterpro:request-extension-session"));
-        throw new Error("Je Magister-sessie is verlopen. Ververs de echte Magister-pagina met de extensie actief, en klik daarna op Gegevens vernieuwen.");
-      }
-
-      if (
-        connection.magisterSessionSource !== "extension" &&
-        connection.magisterExpiresAt &&
-        Date.now() > connection.magisterExpiresAt - 60_000 &&
-        connection.magisterRefreshToken
-      ) {
-        const res = await fetch("/api/auth/magister/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            grant: "refresh",
-            refreshToken: connection.magisterRefreshToken,
-            clientId: connection.magisterClientId || undefined,
-          }),
-        });
-        const json = await res.json() as { token?: string; refreshToken?: string; expiresIn?: number; message?: string };
-        if (!res.ok || !json.token) throw new Error(json.message ?? "Je Magister-sessie is verlopen. Log opnieuw in.");
-        token = json.token;
-        setState((s) => ({
-          ...s,
-          connection: {
-            ...s.connection,
-            magisterToken: token,
-            magisterRefreshToken: json.refreshToken ?? s.connection.magisterRefreshToken,
-            magisterExpiresAt: Date.now() + (json.expiresIn ?? 3600) * 1000,
-          },
-        }));
+      if (connection.zermeloToken && !connection.zermeloSubdomain) {
+        throw new Error("Vul je Zermelo-school in bij Instellingen (bijv. schoolnaam.zportal.nl).");
       }
 
       const result = await fetchLiveData({
-        magisterToken: token,
-        magisterSchool: connection.magisterSchool,
+        magisterToken: hasMagister ? token : "",
+        magisterSchool: hasMagister ? connection.magisterSchool : "",
         zermeloSubdomain: connection.zermeloSubdomain,
         zermeloToken: connection.zermeloToken,
         zermeloStudentCode: connection.zermeloStudentCode,
@@ -296,7 +355,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Kon de schoolgegevens niet laden.";
-      setLoadError(friendlyMagisterError(message));
+      setLoadError(friendlyLiveError(message, !hasMagister));
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -304,11 +363,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!mounted || !state.connection.magisterToken) return;
+    if (!mounted) return;
+    if (!state.connection.magisterToken && !state.connection.zermeloToken) return;
     void refresh();
-    // Alleen opnieuw laden wanneer de token verandert (niet bij elke profielpatch).
+    // Alleen opnieuw laden wanneer een koppeling verandert (niet bij elke profielpatch).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, state.connection.magisterToken, refresh]);
+  }, [mounted, state.connection.magisterToken, state.connection.zermeloToken, state.connection.zermeloSubdomain, refresh]);
 
   const data = useMemo<AppData>(() => {
     const grades = [...liveData.grades, ...state.fakeGrades];
@@ -368,6 +428,38 @@ export function Providers({ children }: { children: React.ReactNode }) {
     return [...liveData.appointments, ...extra].sort((a, b) => a.start.localeCompare(b.start));
   }, [liveData.appointments, liveData.choiceGroups, state.enrollments]);
 
+  const saveZermeloKey = useCallback(() => {
+    const c = connectionRef.current;
+    if (!c.zermeloToken || !c.zermeloSubdomain) return false;
+    try {
+      localStorage.setItem(ZERMELO_KEY_STORAGE, JSON.stringify({
+        subdomain: c.zermeloSubdomain,
+        token: c.zermeloToken,
+        expiresAt: c.zermeloTokenExpiresAt,
+        studentCode: c.zermeloStudentCode,
+      } satisfies SavedZermeloKey));
+      setSavedZermeloKey(true);
+      return true;
+    } catch { return false; }
+  }, []);
+
+  const forgetZermeloKey = useCallback(() => {
+    try { localStorage.removeItem(ZERMELO_KEY_STORAGE); } catch { /* negeren */ }
+    setSavedZermeloKey(false);
+    setState((s) => ({
+      ...s,
+      connection: {
+        ...s.connection,
+        zermeloSubdomain: "",
+        zermeloToken: "",
+        zermeloTokenExpiresAt: 0,
+        zermeloStudentCode: "",
+      },
+    }));
+    setLiveData(emptyAppData());
+    setLastSync(null);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setState({ ...defaultState, theme: state.theme, accent: state.accent });
@@ -387,6 +479,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   const value: AppContextValue = {
     mounted, now, state, patch, data, loading, loadError, lastSync, refresh, logout, resetLocalData,
+    savedZermeloKey, saveZermeloKey, forgetZermeloKey,
     setTheme: (theme) => patch({ theme }),
     setAccent: (accent) => patch({ accent }),
     enroll: (groupId, optionId) => patch({ enrollments: { ...state.enrollments, [groupId]: optionId } }),

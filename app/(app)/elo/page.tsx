@@ -42,6 +42,10 @@ export default function EloPage() {
   /** Opent de echte bijlage via de schoolproxy, of downloads de tekstvoorlooper. */
   const openAttachment = async (attachment: StudyGuideAttachment) => {
     const config = { subdomain: state.connection.magisterSchool, token: state.connection.magisterToken };
+    if (!config.subdomain || !config.token) {
+      toast("Magister niet gekoppeld", "warning", "Deze bijlage is alleen via je Magister-portaal beschikbaar.");
+      return;
+    }
     if (attachment.url) {
       try {
         await downloadMagisterFile(config, attachment.url, attachment.name);

@@ -224,7 +224,7 @@ export interface ConnectionSettings {
   /** Volledige school-host, bijv. "school.magister.net". */
   magisterSchool: string;
   magisterToken: string;
-  /** Wordt uit het echte Magister-account gehaald; nodig voor activiteiten. */
+  /** Leeg in Zermelo-only-modus; anders uit het echte Magister-account. */
   magisterPersonId: string;
   magisterRefreshToken: string;
   magisterExpiresAt: number;

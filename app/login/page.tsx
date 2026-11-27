@@ -54,7 +54,9 @@ function normalizeSchoolSafe(input: string): string {
 export default function LoginPage() {
   const { patch, state } = useApp();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("magister");
+  const [tab, setTab] = useState<Tab>(
+    state.connection.zermeloToken && !state.connection.magisterToken ? "zermelo" : "magister"
+  );
   const [zSchool, setZSchool] = useState(state.connection.zermeloSubdomain);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -86,10 +88,10 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (!extensionConnected || !state.connection.magisterToken) return;
+    if (!extensionConnected && !state.connection.magisterToken && !state.connection.zermeloToken) return;
     const timer = window.setTimeout(() => router.push("/dashboard"), 500);
     return () => window.clearTimeout(timer);
-  }, [extensionConnected, state.connection.magisterToken, router]);
+  }, [extensionConnected, state.connection.magisterToken, state.connection.zermeloToken, router]);
 
   useEffect(() => {
     const check = () => setExtensionReady(
@@ -295,11 +297,19 @@ export default function LoginPage() {
       const subdomain = normalizeZermeloSubdomain(zSchool);
       const token = res.data.access_token || res.data.token || "";
       if (!token) throw new Error("Zermelo gaf geen access_token terug.");
-      patch({ connection: { ...connectionRef.current, zermeloSubdomain: subdomain, zermeloToken: token } });
-      toast("Zermelo gekoppeld", "success", "Je keuzelessen en roosterwijzigingen worden geladen.");
+      const expiresIn = Number(res.data.expires_in ?? res.data.expiresIn ?? 0);
+      patch({
+        connection: {
+          ...connectionRef.current,
+          zermeloSubdomain: subdomain,
+          zermeloToken: token,
+          zermeloTokenExpiresAt: expiresIn > 0 ? Date.now() + expiresIn * 1000 : 0,
+          zermeloStudentCode: "",
+        },
+      });
+      toast("Zermelo gekoppeld", "success", "Je rooster en keuzelessen worden geladen.");
       setCode("");
-      if (connectionRef.current.magisterToken) router.push("/dashboard");
-      else setTab("magister");
+      router.push("/dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Zermelo-koppeling mislukt.");
     } finally {
@@ -559,14 +569,14 @@ export default function LoginPage() {
                 </button>
                 <div className="flex items-start gap-2 rounded-xl bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/40">
                   <ShieldCheck size={14} className="mt-0.5 shrink-0 text-emerald-400" />
-                  Zermelo gebruikt geen browser-OAuth voor leerlingen; de koppelingscode is de officiële manier om een token te verkrijgen. Je ziet daarna direct je keuzelessen en roosterwijzigingen.
+                  Zermelo gebruikt geen browser-OAuth voor leerlingen; de koppelingscode is de officiële manier om een token te verkrijgen. De sleutel wordt daarna apart op dit apparaat bewaard, zodat je na uitloggen automatisch opnieuw verbonden bent. Je ziet direct je rooster, vakken en keuzelessen.
                 </div>
               </motion.div>
             )}
 
             {error && <p className="mt-4 rounded-xl bg-rose-500/10 p-3 text-[11px] text-rose-300">{error}</p>}
 
-            {state.connection.magisterToken && tab === "zermelo" && (
+            {(state.connection.magisterToken || state.connection.zermeloToken) && tab === "zermelo" && (
               <button onClick={() => router.push("/dashboard")} className="mt-4 flex w-full items-center justify-center gap-2 text-[11px] font-semibold text-white/45 hover:text-white">
                 Terug naar dashboard <ArrowRight size={12} />
               </button>

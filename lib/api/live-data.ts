@@ -13,8 +13,9 @@ import type {
 } from "@/lib/types";
 
 export interface LiveConnection {
-  magisterToken: string;
-  magisterSchool: string;
+  /** Magister is optioneel: Zermelo-only is een volledig ondersteunde modus. */
+  magisterToken?: string;
+  magisterSchool?: string;
   zermeloSubdomain?: string;
   zermeloToken?: string;
   zermeloStudentCode?: string;
@@ -206,50 +207,56 @@ export function emptyAppData(): AppData {
 
 /** Haalt alle beschikbare live-data op en mapt die naar het uniforme model. */
 export async function fetchLiveData(connection: LiveConnection): Promise<LiveDataResult> {
-  const config: MagisterConfig = { subdomain: connection.magisterSchool, token: connection.magisterToken };
-  const host = normalizeMagisterHost(connection.magisterSchool);
-  const accountRes = await magister.getAccount(config);
-  if (!accountRes.ok) {
+  // Magister is optioneel. Zonder Magister-koppeling laden we het rooster,
+  // de vakken en de keuzelessen volledig uit Zermelo.
+  const magisterEnabled = Boolean(connection.magisterToken && connection.magisterSchool);
+  const config: MagisterConfig = {
+    subdomain: connection.magisterSchool ?? "",
+    token: connection.magisterToken ?? "",
+  };
+  const host = magisterEnabled ? normalizeMagisterHost(connection.magisterSchool!) : "";
+  const accountRes = magisterEnabled ? await magister.getAccount(config) : null;
+  if (magisterEnabled && accountRes && !accountRes.ok) {
     throw new Error(accountRes.error ?? "Kon je Magister-account niet ophalen. Log opnieuw in.");
   }
-  const account = accountRes.data ?? {};
+  const account: Row = accountRes?.ok ? (accountRes.data as Row) ?? {} : {};
   const person = account.Persoon;
-  const personId = person?.Id;
-  if (!personId) throw new Error("Geen leerlingprofiel gevonden in Magister.");
+  const personId: string | number | undefined = magisterEnabled ? person?.Id : undefined;
+  if (magisterEnabled && !personId) throw new Error("Geen leerlingprofiel gevonden in Magister.");
 
-  const enrollmentsRes = await magister.getEnrollments(config, personId);
-  const enrollments = list(enrollmentsRes.data);
+  const enrollmentsRes = magisterEnabled && personId ? await magister.getEnrollments(config, personId) : null;
+  const enrollments = list(enrollmentsRes?.data);
   const enrollment = enrollments.find((e) => e.isHoofdAanmelding || e.IsHoofdAanmelding) ?? enrollments[0];
-  const aanmeldingId = enrollment?.id ?? enrollment?.Id ?? personId;
+  const aanmeldingId = enrollment?.id ?? enrollment?.Id ?? personId ?? "";
 
   const from = asLocalISO(new Date(Date.now() - 150 * 86_400_000));
   const to = asLocalISO(new Date(Date.now() + 180 * 86_400_000));
 
   const [gradesRes, appointmentsRes, absencesRes, messagesRes, assignmentsRes, guidesRes,
     enrollmentSubjectsRes, activitiesRes, zermeloRes, zermeloUsersRes] = await Promise.allSettled([
-    magister.getGrades(config, aanmeldingId, 400),
-    magister.getAppointments(config, personId, from, to),
-    magister.getAbsences(config, personId, from, to),
-    magister.getMessages(config, 60),
-    magister.getAssignments(config, personId),
-    magister.getStudyGuides(config, personId),
-    magister.getEnrollmentSubjects(config, personId, aanmeldingId),
-    magister.getActivities(config, personId),
-    connection.zermeloToken
+    magisterEnabled ? magister.getGrades(config, aanmeldingId, 400) : Promise.resolve(null),
+    magisterEnabled && personId ? magister.getAppointments(config, personId, from, to) : Promise.resolve(null),
+    magisterEnabled && personId ? magister.getAbsences(config, personId, from, to) : Promise.resolve(null),
+    magisterEnabled ? magister.getMessages(config, 60) : Promise.resolve(null),
+    magisterEnabled && personId ? magister.getAssignments(config, personId) : Promise.resolve(null),
+    magisterEnabled && personId ? magister.getStudyGuides(config, personId) : Promise.resolve(null),
+    magisterEnabled && personId ? magister.getEnrollmentSubjects(config, personId, aanmeldingId) : Promise.resolve(null),
+    magisterEnabled && personId ? magister.getActivities(config, personId) : Promise.resolve(null),
+    connection.zermeloToken && connection.zermeloSubdomain
       ? zermelo.getAppointments(
-          { subdomain: connection.zermeloSubdomain ?? "", token: connection.zermeloToken },
+          { subdomain: connection.zermeloSubdomain, token: connection.zermeloToken },
           Math.floor(Date.now() / 1000) - 30 * 86_400,
           Math.floor(Date.now() / 1000) + 120 * 86_400
         )
       : Promise.resolve(null),
-    connection.zermeloToken
-      ? zermelo.getMe({ subdomain: connection.zermeloSubdomain ?? "", token: connection.zermeloToken })
+    connection.zermeloToken && connection.zermeloSubdomain
+      ? zermelo.getMe({ subdomain: connection.zermeloSubdomain, token: connection.zermeloToken })
       : Promise.resolve(null),
   ]);
 
   const value = <T>(result: PromiseSettledResult<T>): T | null =>
     result.status === "fulfilled" ? result.value : null;
-  const okData = <T>(result: PromiseSettledResult<{ ok: boolean; data?: T }>): T | null => {
+  const okData = <T>(result: PromiseSettledResult<{ ok: boolean; data?: T } | null>): T | null => {
     const res = value(result);
     return res?.ok ? (res.data ?? null) : null;
   };
@@ -293,10 +300,10 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     ...rawSubjects.map((s) => str(pick(s, "docent", "Docent"))),
   ].filter((code) => code.trim().length >= 2))].slice(0, 40);
   const contactResults = await Promise.allSettled(
-    teacherCodes.map((code) => magister.getContacts(config, personId, code))
+    teacherCodes.map((code) => personId ? magister.getContacts(config, personId, code) : Promise.resolve(null))
   );
   contactResults.forEach((res, index) => {
-    if (res.status !== "fulfilled" || !res.value.ok) return;
+    if (res.status !== "fulfilled" || !res.value || !res.value.ok) return;
     const code = teacherCodes[index].toLowerCase();
     const rows = list(res.value.data);
     const match = rows.find((row) => str(pick(row, "Docentcode", "docentcode")).toLowerCase() === code) ?? rows[0];
@@ -350,7 +357,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
         profile: profileFor(name),
         isCore: CORE.some((core) => name.toLowerCase().includes(core.toLowerCase())),
         isExamSubject: true,
-        description: `Vakgegevens geladen uit ${connection.magisterSchool}.`,
+        description: `Vakgegevens geladen uit ${connection.magisterSchool || connection.zermeloSubdomain || "de schoolkoppeling"}.`,
       });
     }
     return subjectMap.get(key)!.id;
@@ -557,11 +564,11 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   });
 
   const activityElementsResults = await Promise.allSettled(rawActivities.map((activity) =>
-    magister.getActivityElements(config, personId, pick(activity, "Id", "id"))
+    personId ? magister.getActivityElements(config, personId, pick(activity, "Id", "id")) : Promise.resolve(null)
   ));
   rawActivities.forEach((activity, activityIndex) => {
     const elementResult = activityElementsResults[activityIndex];
-    const elements = elementResult?.status === "fulfilled" && elementResult.value.ok
+    const elements = elementResult?.status === "fulfilled" && elementResult.value && elementResult.value.ok
       ? list(elementResult.value.data) : [];
     const activityId = str(pick(activity, "Id", "id"));
     if (!activityId) return;
@@ -745,15 +752,17 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
 
   const school = str(pick(account, "School", "school"))
     || str(pick(account.School ?? {}, "Naam", "naam"))
-    || connection.magisterSchool.replace(/\.magister\.net$/, "");
-  const name = [person.Roepnaam, person.Achternaam].filter(Boolean).join(" ")
+    || (connection.magisterSchool ? connection.magisterSchool.replace(/\.magister\.net$/, "") : "")
+    || connection.zermeloSubdomain
+    || "";
+  const name = [person?.Roepnaam, person?.Achternaam].filter(Boolean).join(" ")
     || [pick(zermeloMe ?? {}, "firstName"), pick(zermeloMe ?? {}, "lastName")].map(str).filter(Boolean).join(" ")
     || str(pick(zermeloMe ?? {}, "displayName"))
     || "Leerling";
 
   return {
     name, school,
-    personId: String(personId),
+    personId: String(personId ?? ""),
     studentCode,
     counts: {
       grades: grades.length,

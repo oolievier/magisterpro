@@ -6,14 +6,15 @@ import { useRouter, usePathname } from "next/navigation";
 import { AlertTriangle, Loader2, Settings2 } from "lucide-react";
 import { useApp } from "@/app/providers";
 
-/** Blokkeert de app volledig totdat er een echte Magister-sessie is. */
+/** Blokkeert de app totdat er een echte schoolkoppeling is: Magister óf Zermelo. */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { mounted, state, loading, loadError, lastSync, refresh, data } = useApp();
   const router = useRouter();
   const pathname = usePathname();
-  const connected = Boolean(state.connection.magisterToken);
+  const connected = Boolean(state.connection.magisterToken || state.connection.zermeloToken);
   const allowSettings = pathname === "/settings";
-  const waiting = connected && !allowSettings && !loadError && (loading || (!lastSync && data.subjects.length === 0));
+  const hasData = data.subjects.length > 0 || data.appointments.length > 0 || data.choiceGroups.length > 0;
+  const waiting = connected && !allowSettings && !loadError && (loading || (!lastSync && !hasData));
 
   useEffect(() => {
     if (mounted && !connected) router.replace("/login");
@@ -28,7 +29,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!allowSettings && loadError && !lastSync && data.subjects.length === 0) {
+  if (!allowSettings && loadError && !lastSync && !hasData) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#0a0a0f] px-4 text-center text-white">
         <AlertTriangle className="text-amber-400" size={28} />

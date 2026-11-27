@@ -25,6 +25,7 @@ const LEVELS: { value: EducationLevel; label: string }[] = [
 export default function SettingsPage() {
   const {
     state, patch, setTheme, setAccent, refresh, logout, resetLocalData,
+    savedZermeloKey, saveZermeloKey, forgetZermeloKey,
     setSubjectColor, resetSubjectColors,
     loading, loadError, lastSync, data,
   } = useApp();
@@ -102,6 +103,7 @@ export default function SettingsPage() {
 
       <section className="panel p-5">
         <h2 className="section-title mb-4">Koppelingen</h2>
+        <p className="mb-4 text-xs text-slate-500 dark:text-white/45">Zermelo alleen is genoeg voor rooster, vakken en keuzelessen. Magister is optioneel en voegt cijfers, PTA en ELO toe.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className={`rounded-2xl border p-4 ${c.magisterToken ? "border-emerald-400/30 bg-emerald-400/[0.06]" : "border-amber-400/25 bg-amber-400/[0.05]"}`}>
             <div className="mb-2 flex items-center justify-between">
@@ -110,7 +112,7 @@ export default function SettingsPage() {
             </div>
             <p className="text-sm font-bold text-slate-900 dark:text-white">Magister v6</p>
             <p className="mono mt-1 text-[11px] text-slate-500 dark:text-white/45">{c.magisterSchool || "Niet verbonden"}</p>
-            <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{c.magisterToken ? (state.connection.name || "Leerling") : "Koppel via de extensie of native app"}</p>
+            <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{c.magisterToken ? (state.connection.name || "Leerling") : "Optioneel · cijfers, PTA en ELO"}</p>
           </div>
           <div className={`rounded-2xl border p-4 ${c.zermeloToken ? "border-emerald-400/30 bg-emerald-400/[0.06]" : "border-amber-400/25 bg-amber-400/[0.05]"}`}>
             <div className="mb-2 flex items-center justify-between">
@@ -119,7 +121,7 @@ export default function SettingsPage() {
             </div>
             <p className="text-sm font-bold text-slate-900 dark:text-white">Zermelo v3</p>
             <p className="mono mt-1 text-[11px] text-slate-500 dark:text-white/45">{c.zermeloToken ? `${c.zermeloSubdomain}.zportal.nl` : "Niet gekoppeld"}</p>
-            <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{c.zermeloToken ? "Keuzelessen actief" : "Koppel voor KWT en roosterwijzigingen"}</p>
+            <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">{c.zermeloToken ? "Rooster, vakken en keuzelessen actief" : "Koppel voor rooster en keuzelessen"}</p>
           </div>
         </div>
 
@@ -158,7 +160,7 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {(!c.magisterToken || loadError || c.magisterSessionSource === "extension") && (
+        {(!c.magisterToken && !c.zermeloToken) || (c.magisterToken && (loadError || c.magisterSessionSource === "extension")) && (
           <div className="mt-4 space-y-2 rounded-xl border border-slate-200 p-4 dark:border-white/[0.08]">
             <button onClick={requestExtensionSession} className="btn-secondary">
               <KeyRound size={14} /> Magister-sessie via extensie ophalen
@@ -192,6 +194,29 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {(savedZermeloKey || c.zermeloToken) && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] p-3">
+            <KeyRound size={14} className="text-emerald-400" />
+            <p className="min-w-0 flex-1 text-[11px] text-slate-600 dark:text-white/60">
+              {savedZermeloKey
+                ? "Zermelo-sleutel is apart opgeslagen op dit apparaat en komt terug na uitloggen."
+                : "Zermelo is verbonden; de sleutel wordt automatisch bewaard."}
+            </p>
+            <button
+              onClick={() => { const ok = saveZermeloKey(); toast(ok ? "Zermelo-sleutel bewaard" : "Geen Zermelo-sleutel om te bewaren", ok ? "success" : "warning"); }}
+              className="btn-secondary !py-1.5"
+            >
+              <KeyRound size={13} /> Bewaar sleutel
+            </button>
+            <button
+              onClick={() => { forgetZermeloKey(); toast("Zermelo-sleutel verwijderd", "info", "Je moet opnieuw koppelen met een code uit het portaal."); }}
+              className="btn-secondary !py-1.5 !text-rose-400"
+            >
+              <XCircle size={13} /> Verwijder sleutel
+            </button>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4 dark:border-white/[0.08]">
           <button onClick={() => void refresh()} disabled={loading} className="btn-secondary">
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Gegevens vernieuwen
@@ -208,8 +233,8 @@ export default function SettingsPage() {
           <div><h2 className="section-title">Profiel</h2><p className="text-xs text-slate-500 dark:text-white/45">Bepaalt o.a. de slaag/zak-regels.</p></div>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <div><label className="label">Naam (uit Magister)</label><input className="input" value={c.name} onChange={(e) => setConnection({ name: e.target.value })} /></div>
-          <div><label className="label">School (uit Magister)</label><input className="input" value={c.school} onChange={(e) => setConnection({ school: e.target.value })} /></div>
+          <div><label className="label">Naam (uit schoolkoppeling)</label><input className="input" value={c.name} onChange={(e) => setConnection({ name: e.target.value })} /></div>
+          <div><label className="label">School (uit schoolkoppeling)</label><input className="input" value={c.school} onChange={(e) => setConnection({ school: e.target.value })} /></div>
           <div><label className="label">Niveau</label><select className="input" value={c.level} onChange={(e) => setConnection({ level: e.target.value as EducationLevel })}>{LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}</select></div>
         </div>
       </section>

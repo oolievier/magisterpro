@@ -101,7 +101,7 @@ export function whatIf(target: number, grades: Grade[], weight: number): WhatIfR
  * Officiële slaag/zak-check (bovenbouw havo/vwo, volgens opgave)
  * ------------------------------------------------------------------------- */
 
-export type ExamStatus = "op-koers" | "aandacht" | "gevaar";
+export type ExamStatus = "op-koers" | "aandacht" | "gevaar" | "geen-data";
 
 export interface ExamCheck {
   status: ExamStatus;
@@ -121,12 +121,12 @@ export interface ExamCheck {
 }
 
 export function deficitFor(rounded: number): number {
-  if (rounded >= 6) return 0;
+  if (!Number.isFinite(rounded) || rounded >= 6) return 0;
   return Math.min(5, 6 - rounded);
 }
 
 export function compensationFor(rounded: number): number {
-  if (rounded <= 6) return 0;
+  if (!Number.isFinite(rounded) || rounded <= 6) return 0;
   if (rounded === 7) return 1;
   if (rounded === 8) return 2;
   return 3;
@@ -145,7 +145,13 @@ export function examCheck(
   const roundedGrades = subjects
     .filter((s) => s.isExamSubject)
     .map((s) => {
-      const own = allGrades.filter((g) => g.subjectId === s.id && Number.isFinite(g.value) && g.value > 0);
+      // Samenvattingskolommen (voorlopig eindcijfer, R1/VG1, eind SE, ...) hebben
+      // weging 0 en mogen niet als apart cijfer meetellen: dat geeft NaN of
+      // dubbeltellingen. Alleen echte, gewogen cijfers bepalen de slaagcheck.
+      const own = allGrades.filter((g) =>
+        g.subjectId === s.id && Number.isFinite(g.value) && g.value > 0
+        && Number.isFinite(g.weight) && g.weight > 0
+      );
       const raw = weightedAverage(own);
       return {
         subjectId: s.id,
@@ -156,7 +162,7 @@ export function examCheck(
         count: own.length,
       };
     })
-    .filter((r) => r.count > 0);
+    .filter((r) => r.count > 0 && Number.isFinite(r.raw));
 
   const coreIssues: string[] = [];
   const coreEntries = roundedGrades.filter((r) => r.core);
@@ -199,17 +205,22 @@ export function examCheck(
     .slice(0, 3);
 
   const balanceOk = hasData && compensationPoints >= deficitPoints && coreOk && averageOk;
-  const status: ExamStatus = !hasData ? "gevaar" : balanceOk && averageRounded >= 6.4 ? "op-koers" : balanceOk ? "aandacht" : "gevaar";
-  const label = !hasData ? "Nog geen cijfers" : status === "op-koers" ? "Ruim op koers" : status === "aandacht" ? "Aandachtspunt" : "Gevarenzone";
+  const status: ExamStatus = !hasData ? "geen-data" : balanceOk && averageRounded >= 6.4 ? "op-koers" : balanceOk ? "aandacht" : "gevaar";
+  const label = status === "geen-data" ? "Nog geen cijfers" : status === "op-koers" ? "Ruim op koers" : status === "aandacht" ? "Aandachtspunt" : "Gevarenzone";
 
   const examYear = EXAM_YEARS.has(level);
-  const baseSummary = !hasData
+  const shortage = Math.max(0, deficitPoints - compensationPoints);
+  const baseSummary = status === "geen-data"
     ? "Zodra echte cijfers uit je schoolportaal binnenkomen, verschijnt hier je slaag/zak-check."
     : status === "op-koers"
       ? "Je staat er goed voor. Blijf je compensatiepunten behouden."
       : status === "aandacht"
         ? "Je haalt net aan de eisen, maar er is weinig marge over."
-        : `Er zijn ${Math.max(0, deficitPoints - compensationPoints)} tekortpunten te veel of een kernvakregeling wordt geschonden.`;
+        : coreIssues.length > 0
+          ? coreIssues[0]
+          : shortage > 0
+            ? `Er zijn ${shortage} tekortpunten te veel om te compenseren.`
+            : "Je gemiddelde ligt nog onder een 6,0.";
 
   return {
     status,

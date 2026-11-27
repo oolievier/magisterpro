@@ -55,7 +55,7 @@ function GradesView() {
           <div><h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">Cijferstudio & Slaag-simulator</h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-white/45">Elk cijfer, elke weging, elk scenario — tot op de komma.</p></div>
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10">
-            <span className="text-[11px] text-slate-400">Slaagstatus</span><Pill tone={check.status === "op-koers" ? "green" : check.status === "aandacht" ? "amber" : "red"}>{check.label}</Pill>
+            <span className="text-[11px] text-slate-400">Slaagstatus</span><Pill tone={check.status === "op-koers" ? "green" : check.status === "aandacht" ? "amber" : check.status === "gevaar" ? "red" : "neutral"}>{check.label}</Pill>
           </div>
         </div>
       </div>

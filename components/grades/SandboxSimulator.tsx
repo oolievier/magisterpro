@@ -109,7 +109,7 @@ export function SandboxSimulator() {
           <div className="rounded-2xl border border-slate-200 p-4 dark:border-white/[0.08]">
             <p className="mb-2 text-xs font-bold text-slate-700 dark:text-white/80">Slaag/zak na simulatie</p>
             <div className="flex items-center justify-between">
-              <span className={`text-lg font-bold ${simCheck.status === "op-koers" ? "text-emerald-400" : simCheck.status === "aandacht" ? "text-amber-400" : "text-rose-400"}`}>{simCheck.label}</span>
+              <span className={`text-lg font-bold ${simCheck.status === "op-koers" ? "text-emerald-400" : simCheck.status === "aandacht" ? "text-amber-400" : simCheck.status === "gevaar" ? "text-rose-400" : "text-slate-400"}`}>{simCheck.label}</span>
               <span className="mono text-xs text-slate-400">{realCheck.label} → {simCheck.label}</span>
             </div>
             <p className="mt-2 text-[11px] text-slate-500 dark:text-white/45">{simCheck.summary}</p>

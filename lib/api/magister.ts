@@ -130,6 +130,11 @@ export const magister = {
     return request<{ items?: MagisterGrade[] }>(config, `api/aanmeldingen/${enrollmentId}/cijfers?top=${top}`);
   },
 
+  /** Alternatieve cijferpaden voor scholen met een afwijkende API-indeling. */
+  getGradesFromPath<T = unknown>(config: MagisterConfig, path: string) {
+    return request<T>(config, path);
+  },
+
   getAppointments<T = unknown[]>(config: MagisterConfig, personId: number | string, from: string, to: string) {
     const q = new URLSearchParams({ van: from, tot: to });
     return request<T>(config, `api/personen/${personId}/afspraken?${q}`);

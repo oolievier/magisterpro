@@ -44,6 +44,23 @@ export interface Grade {
   ptaColumnId?: string;
   fake?: boolean;
   isNew?: boolean;
+  /** Cijfer dat Magister wel gaf, maar dat we zonder tussenkomst niet konden plaatsen. */
+  needsReview?: boolean;
+  /** Ruwe waarde/vak/kolom uit de school-API, zichtbaar in Cijferdetectie. */
+  rawValue?: string;
+  rawSubject?: string;
+  rawColumn?: string;
+}
+
+/** Door de leerling bevestigde correctie op een detecteerd cijfer. */
+export interface GradeOverride {
+  subjectId?: string;
+  value?: number;
+  weight?: number;
+  label?: string;
+  type?: GradeType;
+  /** false = bewust verbergen, ook al is het cijfer geldig. */
+  include?: boolean;
 }
 
 export interface PtaColumn {
@@ -268,6 +285,8 @@ export interface PersistedState {
   sidebarCollapsed: boolean;
   /** Door de leerling gekozen vakkleuren, gesleuteld op subjectId. */
   subjectColors: Record<string, string>;
+  /** Handmatige correcties op cijferdetectie, op cijfer-id. */
+  gradeOverrides: Record<string, GradeOverride>;
   /** Wanneer een taak (ook via bulk) is afgerond. */
   homeworkCompletedAt: Record<string, string>;
   /** Huiswerk uit het verleden dat bewust uit zicht is gehaald. */
@@ -278,6 +297,9 @@ export interface AppData {
   subjects: Subject[];
   teachers: Teacher[];
   grades: Grade[];
+  /** Cijfers die eerst handmatig aan een vak/waarde gekoppeld moeten worden. */
+  gradeCandidates: Grade[];
+  gradeDiagnostics: { raw: number; accepted: number; review: number; dropped: number; errors: string[] };
   ptaColumns: PtaColumn[];
   appointments: Appointment[];
   choiceGroups: ChoiceGroup[];

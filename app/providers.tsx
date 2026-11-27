@@ -6,7 +6,7 @@ import { toast } from "@/components/ui/Toaster";
 import { publishCalendarFeed } from "@/lib/calendar";
 import type {
   AppData, PersistedState, AccentName, ThemeName, HomeworkStatus, EloStatus,
-  Grade, ChoiceGroup, Message, BlockedSlot, Appointment,
+  Grade, GradeOverride, PtaColumn, ChoiceGroup, Message, BlockedSlot, Appointment,
 } from "@/lib/types";
 
 const STORAGE_KEY = "magisterpro-state-v2";
@@ -77,6 +77,7 @@ const defaultState: PersistedState = {
   focusSessions: [],
   completedChores: [],
   fakeGrades: [],
+  gradeOverrides: {},
   seenIds: [],
   sidebarCollapsed: false,
   subjectColors: {},
@@ -123,6 +124,8 @@ interface AppContextValue {
   addFakeGrade: (grade: Grade) => void;
   removeFakeGrade: (id: string) => void;
   clearFakeGrades: () => void;
+  setGradeOverride: (id: string, patch: GradeOverride) => void;
+  clearGradeOverride: (id: string) => void;
   addMessage: (message: Message) => void;
   markMessageRead: (id: string) => void;
   addHomework: (title: string, subjectId: string, due: string) => void;
@@ -344,8 +347,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       });
       setLiveData(result.data);
       setLastSync(new Date());
-      if (hasMagister && result.counts.grades === 0) {
+      if (hasMagister && result.counts.grades === 0 && result.data.gradeCandidates.length === 0) {
         toast("Geen cijfers ontvangen", "warning", "Magister gaf geen cijfers terug. Ververs met de extensie actief, of controleer je schoolkoppeling bij Instellingen.");
+      } else if (result.data.gradeCandidates.length > 0) {
+        toast("Cijfers gevonden", "warning", `${result.data.gradeCandidates.length} rij(en) konden niet automatisch worden geplaatst. Open de Cijferdetectie-tab in de Cijferstudio.`);
       }
       setState((s) => ({
         ...s,
@@ -375,7 +380,45 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, [mounted, state.connection.magisterToken, state.connection.zermeloToken, state.connection.zermeloSubdomain, refresh]);
 
   const data = useMemo<AppData>(() => {
-    const grades = [...liveData.grades, ...state.fakeGrades];
+    // Handmatige correcties uit Cijferdetectie zijn leidend over de automatische
+    // mapping. Een kandidaat passt door naar de echte cijfers zodra er zowel een
+    // geldige waarde als een vak is gekozen.
+    const withOverride = (g: Grade): Grade => {
+      const o = state.gradeOverrides[g.id];
+      if (!o) return g;
+      return {
+        ...g,
+        ...(o.subjectId ? { subjectId: o.subjectId } : {}),
+        ...(typeof o.value === "number" ? { value: o.value } : {}),
+        ...(typeof o.weight === "number" ? { weight: o.weight } : {}),
+        ...(o.label ? { label: o.label } : {}),
+        ...(o.type ? { type: o.type } : {}),
+      };
+    };
+    const hidden = (g: Grade) => state.gradeOverrides[g.id]?.include === false;
+    const accepted = liveData.grades.map(withOverride).filter((g) => !hidden(g));
+    const resolvedCandidates = liveData.gradeCandidates
+      .map(withOverride)
+      .filter((g) => !hidden(g) && g.value > 0 && g.subjectId && g.subjectId !== "vak-onbekend-vak");
+    const candidates = liveData.gradeCandidates
+      .map(withOverride)
+      .filter((g) => !hidden(g) && !resolvedCandidates.some((r) => r.id === g.id));
+    const grades = [...accepted, ...resolvedCandidates, ...state.fakeGrades];
+    const ptaColumns: PtaColumn[] = Object.values(
+      grades.filter((g) => !g.fake && g.ptaColumnId).reduce<Record<string, Grade[]>>((acc, g) => {
+        (acc[g.ptaColumnId!] ??= []).push(g);
+        return acc;
+      }, {})
+    ).map((items) => {
+      const first = items[0];
+      const latest = [...items].sort((a, b) => b.date.localeCompare(a.date))[0];
+      return {
+        id: first.ptaColumnId!, subjectId: first.subjectId, code: first.columnCode ?? "PTA",
+        description: first.label, weight: first.weight, date: first.date,
+        retakeable: items.some((g) => g.type === "REP") || /herkans/i.test(first.label),
+        gradeId: latest.id,
+      };
+    });
     const homework = [
       ...liveData.homework.map((h) => ({
         ...h,
@@ -395,8 +438,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     const subjects = liveData.subjects
       .map((s) => ({ ...s, color: state.subjectColors[s.id] ?? s.color }))
       .sort((a, b) => a.name.localeCompare(b.name, "nl"));
-    return { ...liveData, subjects, grades, homework, messages, eloAssignments };
-  }, [liveData, state.fakeGrades, state.homework, state.subtasks, state.extraSubtasks, state.homeworkNotes, state.customHomework, state.messages, state.seenIds, state.eloStatus, state.hiddenHomeworkIds, state.subjectColors]);
+    return { ...liveData, subjects, grades, gradeCandidates: candidates, ptaColumns, homework, messages, eloAssignments };
+  }, [liveData, state.fakeGrades, state.gradeOverrides, state.homework, state.subtasks, state.extraSubtasks, state.homeworkNotes, state.customHomework, state.messages, state.seenIds, state.eloStatus, state.hiddenHomeworkIds, state.subjectColors]);
 
   /** Keuzegroepen met actuele bezetting op basis van lokale inschrijvingen. */
   const choiceGroups = useMemo<ChoiceGroup[]>(() => {
@@ -483,7 +526,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       ...s,
       enrollments: {}, homework: {}, subtasks: {}, extraSubtasks: {}, homeworkNotes: {},
       customHomework: [], messages: [], sentMessages: [], notes: {}, eloStatus: {},
-      blockedSlots: [], focusSessions: [], completedChores: [], fakeGrades: [], seenIds: [],
+      blockedSlots: [], focusSessions: [], completedChores: [], fakeGrades: [], gradeOverrides: {}, seenIds: [],
       subjectColors: {}, homeworkCompletedAt: {}, hiddenHomeworkIds: [],
     }));
   }, []);
@@ -532,6 +575,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     addFakeGrade: (grade) => patch({ fakeGrades: [...state.fakeGrades, { ...grade, id: `fake-${Date.now()}`, fake: true }] }),
     removeFakeGrade: (id) => patch({ fakeGrades: state.fakeGrades.filter((g) => g.id !== id) }),
     clearFakeGrades: () => patch({ fakeGrades: [] }),
+    setGradeOverride: (id, override) => patch({
+      gradeOverrides: { ...state.gradeOverrides, [id]: { ...(state.gradeOverrides[id] ?? {}), ...override } },
+    }),
+    clearGradeOverride: (id) => {
+      const next = { ...state.gradeOverrides };
+      delete next[id];
+      patch({ gradeOverrides: next });
+    },
     addMessage: (message) => patch({ sentMessages: [message, ...state.sentMessages] }),
     markMessageRead: (id) => patch({ seenIds: [...new Set([...state.seenIds, id])] }),
     addHomework: (title, subjectId, due) =>

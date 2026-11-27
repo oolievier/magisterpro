@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import {
   CalendarDays, List, Columns3, Grid3x3, Download, Coffee, MapPin, Clock3,
   AlertTriangle, Sparkles, Filter, CalendarPlus, ArrowRight, CheckCircle2, Radio, ClipboardCheck, Table2,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { KwtModal } from "@/components/zermelo/KwtModal";
@@ -35,6 +36,29 @@ function ScheduleView() {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
   useEffect(() => { if (params.get("kwt") === "1" && data.choiceGroups[0]) setKwtGroup(data.choiceGroups[0]); }, [params, data.choiceGroups]);
+
+  /** Pijltjes (toetsenbord én knoppen) schuiven altijd precies één week. */
+  const shiftWeek = (direction: -1 | 1) => {
+    setSelectedDay((current) => {
+      const date = new Date(`${current}T12:00:00`);
+      date.setDate(date.getDate() + direction * 7);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    });
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (selectedAppointment || addOpen || kwtGroup) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target.tagName))) return;
+      event.preventDefault();
+      shiftWeek(event.key === "ArrowRight" ? 1 : -1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedAppointment, addOpen, kwtGroup]);
 
   const allAppointments = useMemo(() => [...appointments, ...customTests], [appointments, customTests]);
   const filtered = useMemo(() => allAppointments.filter((a) => subjectFilter === "all" || a.subjectId === subjectFilter), [allAppointments, subjectFilter]);
@@ -124,8 +148,12 @@ function ScheduleView() {
         <select className="input !w-auto !py-2" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
           <option value="all">Alle vakken</option>{data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <input type="date" className="input !w-auto !py-2" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} />
-        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400"><Radio size={13} className="text-emerald-400" /> Zermelo leidend voor lokaal & uitval</span>
+        <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-0.5 dark:border-white/[0.08] dark:bg-white/[0.02]">
+          <button title="Vorige week (←)" aria-label="Vorige week" onClick={() => shiftWeek(-1)} className="btn-ghost !p-1.5"><ChevronLeft size={15} /></button>
+          <input type="date" aria-label="Kies datum" className="input !w-auto !border-0 !bg-transparent !py-1.5" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} />
+          <button title="Volgende week (→)" aria-label="Volgende week" onClick={() => shiftWeek(1)} className="btn-ghost !p-1.5"><ChevronRight size={15} /></button>
+        </div>
+        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400"><Radio size={13} className="text-emerald-400" /> Zermelo leidend voor lokaal & uitval · pijltjes = 1 week</span>
       </div>
 
       {/* Grote rode uitvalmelding */}

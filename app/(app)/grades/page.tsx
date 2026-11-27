@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Calculator, FlaskConical, ShieldCheck, BarChart3, LayoutGrid, ChevronRight, TrendingUp, TrendingDown } from "lucide-react";
+import { Calculator, FlaskConical, ShieldCheck, BarChart3, LayoutGrid, ChevronRight, TrendingUp, TrendingDown, ScanSearch } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { subjectStats, examCheck, formatGrade } from "@/lib/calculations/grades";
 import { SubjectDetailModal } from "@/components/grades/SubjectDetailModal";
@@ -11,6 +11,7 @@ import { GradeCalculator } from "@/components/grades/GradeCalculator";
 import { SandboxSimulator } from "@/components/grades/SandboxSimulator";
 import { ExamChecker } from "@/components/grades/ExamChecker";
 import { GradeAnalytics } from "@/components/grades/GradeAnalytics";
+import { GradeDetectionPanel } from "@/components/grades/GradeDetectionPanel";
 import { Pill, ProgressBar } from "@/components/ui/Primitives";
 
 const TABS = [
@@ -19,6 +20,7 @@ const TABS = [
   { id: "sandbox", label: "Wat als… sandbox", icon: FlaskConical },
   { id: "slaagzak", label: "Slaag/Zak-check", icon: ShieldCheck },
   { id: "analytics", label: "Analytics & records", icon: BarChart3 },
+  { id: "detectie", label: "Cijferdetectie", icon: ScanSearch },
 ];
 
 function GradesView() {
@@ -108,6 +110,7 @@ function GradesView() {
       {tab === "sandbox" && <SandboxSimulator />}
       {tab === "slaagzak" && <ExamChecker />}
       {tab === "analytics" && <GradeAnalytics />}
+      {tab === "detectie" && <GradeDetectionPanel />}
 
       <SubjectDetailModal subjectId={detailId} onClose={() => { setDetailId(null); if (params.get("subject")) router.replace("/grades", { scroll: false }); }} />
     </div>

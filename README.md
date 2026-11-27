@@ -5,8 +5,8 @@ Een "Student Operating System" voor Nederlandse middelbare scholieren: een moder
 ## Modules
 
 - **Command Center** — live-lestracker, actie-radar en cijfer-impactfeed.
-- **Cijferstudio Pro** — vakkaarten, "wat moet ik halen?", multi-vak sandbox, slaag/zak-check volgens de officiële regels, analytics en een cijfer-recordboek.
-- **Super-Rooster** — urenraster met dagen bovenaan en uren naar beneden, klikbare lessen met details/acties, dag-/week-/maand-/agendaweergave, Zermelo Hub, KWT-inschrijving met capaciteit en conflictdetectie, tussenuur-optimizer, `.ics`-export en een privé iCal-abonnement.
+- **Cijferstudio Pro** — vakkaarten, "wat moet ik halen?", multi-vak sandbox, slaag/zak-check volgens de officiële regels, analytics, een cijfer-recordboek en een **Cijferdetectie**-tab waarmee je afwijkende Magister-cijferkolommen zelf aan een vak en cijferwaarde koppelt.
+- **Super-Rooster** — urenraster met dagen bovenaan en uren naar beneden, klikbare lessen met details/acties, dag-/week-/maand-/agendaweergave, Zermelo Hub, KWT-inschrijving met capaciteit en conflictdetectie, tussenuur-optimizer, `.ics`-export en een privé iCal-abonnement. De pijltjestoetsen en de kleine pijlknoppen naast de datum schuiven telkens precies één week.
 - **PTA & Examenkluis** — voortgang per PTA-kolom, schoolexamen-gemiddelde en een herkansings-adviseur gesorteerd op rendement.
 - **Toets- & Huiswerkplanner** — Kanban met drag-and-drop, automatisch terugrekenend leerplan, tijdblokkades en een Pomodoro/XP-focusdock met omgevingsgeluid.
 - **Studiewijzer & ELO** — studiewijzers, inleveropdrachten en markdown-notities per vak; echte leermiddelen openen via de schoolproxy of wisselen naar het portaal.

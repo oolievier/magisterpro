@@ -51,8 +51,20 @@ const KNOWN_SUBJECTS: Record<string, string> = {
   ma: "Maatschappijleer", maats: "Maatschappijleer", maatschappijleer: "Maatschappijleer",
   fr: "Frans", frans: "Frans", du: "Duits", duits: "Duits", spa: "Spaans", spaans: "Spaans",
   inf: "Informatica", informatica: "Informatica", ict: "Informatica",
-  kunst: "Kunst & Cultuur", ac: "Kunst & Cultuur",
+  kunst: "Kunst & Cultuur", ac: "Kunst & Cultuur", kc: "Kunst & Cultuur",
   lich: "Lichamelijke opvoeding", lo: "Lichamelijke opvoeding", gym: "Lichamelijke opvoeding",
+  aard: "Aardrijkskunde", aardrijkskunde: "Aardrijkskunde", geo: "Aardrijkskunde",
+  muz: "Muziek", muziek: "Muziek",
+  lat: "Latijn", latijn: "Latijn", gr: "Grieks", grieks: "Grieks",
+  fis: "Filosofie", filosofie: "Filosofie",
+  god: "Godsdienst", gs2: "Godsdienst", levensbeschouwing: "Levensbeschouwing",
+  accounting: "Accountancy", accountancy: "Accountancy",
+  rechten: "Rechten", recht: "Rechten",
+  bec: "Bedrijfseconomie", bedrijfseconomie: "Bedrijfseconomie",
+  handel: "Handel", mba: "Management & Bedrijf",
+  psych: "Psychologie", psychologie: "Psychologie",
+  soc: "Sociologie", sociologie: "Sociologie",
+  techniek: "Techniek", nlt: "Natuur & Techniek",
 };
 
 const pick = (row: Row, ...keys: string[]): any => {
@@ -81,6 +93,83 @@ const num = (value: unknown, fallback = 0): number => {
   }
   return fallback;
 };
+
+/** Parseert cijfers als "7,5", "7.5", "7 1/2", "15/20" en gewone getallen. */
+function parseGradeNumber(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
+  if (typeof value !== "string") return NaN;
+  const raw = value.trim().replace(/\u00a0/g, " ").replace(/\s+/g, " ");
+  if (!raw) return NaN;
+  const fraction = raw.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/);
+  if (fraction) {
+    const result = Number(fraction[1]) + Number(fraction[2]) / Number(fraction[3]);
+    return Number.isFinite(result) ? result : NaN;
+  }
+  const slash = raw.match(/^(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)$/);
+  if (slash) {
+    const upper = num(slash[1].replace(",", "."), NaN);
+    const lower = num(slash[2].replace(",", "."), NaN);
+    if (!Number.isFinite(upper) || !Number.isFinite(lower) || lower === 0) return NaN;
+    // 12/20 is een 6 op de tienpuntsschaal; 7/10 blijft een 7.
+    return lower === 100 ? upper / 10 : lower === 20 ? upper / 2 : upper;
+  }
+  let normalized = raw.replace(/\s/g, "");
+  const hasDecimalComma = /,\d+$/.test(normalized);
+  if (hasDecimalComma) normalized = normalized.replace(/\./g, "").replace(",", ".");
+  else normalized = normalized.replace(/,(\d{3})\b/g, "$1").replace(",", ".");
+  return num(normalized, NaN);
+}
+
+const isTrueish = (value: unknown): boolean => {
+  if (value === true) return true;
+  if (typeof value === "number") return value !== 0;
+  return /^(true|ja|j|yes|y|1)$/i.test(str(value).trim());
+};
+const isFalseish = (value: unknown): boolean => {
+  if (value === false) return true;
+  if (typeof value === "number") return value === 0;
+  return /^(false|nee|n|no|0)$/i.test(str(value).trim());
+};
+
+/**
+ * Zoekt recursief (maximaal 4 niveaus) naar het eerste veld dat aan de
+ * sleutelnaam voldoet. Schoolportalen nesten vak en kolom op wisselende
+ * manieren; vandaar sleutel-matching in plaats van een vaste pad-lijst.
+ */
+function findField(value: unknown, matcher: ((key: string) => boolean) | RegExp, depth = 0): unknown {
+  const matches = (key: string) => typeof matcher === "function" ? matcher(key) : matcher.test(key);
+  if (depth > 4 || value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findField(item, matcher, depth + 1);
+      if (found !== undefined && found !== null && found !== "") return found;
+    }
+    return undefined;
+  }
+  if (typeof value !== "object") return undefined;
+  const row = value as Row;
+  for (const [key, child] of Object.entries(row)) {
+    if (matches(key) && (typeof child === "string" || typeof child === "number") && String(child).trim()) return child;
+  }
+  for (const child of Object.values(row)) {
+    if (child && typeof child === "object") {
+      const found = findField(child, matcher, depth + 1);
+      if (found !== undefined && found !== null && found !== "") return found;
+    }
+  }
+  return undefined;
+}
+
+const SUBJECT_KEYS = /^(omschrijving|naam|vaknaam|weergavenaam|displayname|code|afkorting|vakcode|short|name)$/i;
+const GRADE_KEYS = /^(cijferstr|waarde|cijfer|cijfernumeriek|grade|score|punt|beoordeling|resultaat)$/i;
+const COLUMN_KEYS = /^(kolomomschrijving|omschrijving|naam|code|kolomcode|label|description)$/i;
+
+function gradeSubjectName(row: Row): string {
+  const vak = pick(row, "Vak", "vak", "Vakken", "vakken");
+  const fromVak = str(findField(vak, SUBJECT_KEYS));
+  if (fromVak) return fromVak;
+  return str(findField(row, (key) => /^vak(i|naam|code|omschrijving)?$/i.test(key) || /^vaknaam$/i.test(key)));
+}
 const plain = (value: unknown): string => str(value)
   .replace(/<br\s*\/?>/gi, "\n")
   .replace(/<\/(p|div|li|h\d)>/gi, "\n")
@@ -183,11 +272,19 @@ function canonicalSubject(value: unknown, aliases: Map<string, string>): string 
     aliases.get(candidate.toLowerCase()) ?? aliases.get(keyFor(candidate)) ?? KNOWN_SUBJECTS[keyFor(candidate)];
   const direct = resolve(text);
   if (direct) return direct;
-  // "NAT199", "WISb191", "Wiskunde B 191" -> "NAT", "WISb", "Wiskunde B"
-  const base = text.replace(/\d{2,4}\s*$/, "").replace(/\s+/g, " ").trim();
+  // "NAT199", "WISb191", "Wiskunde B 191", "Wiskunde B (havo)", "Wis B 5h2"
+  const cleaned = text
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .replace(/\s+\d[A-Za-z]{1,3}\d?\s*$/, "")
+    .replace(/[\/–—]/g, " ")
+    .replace(/\s*[.:]\s*$/, "")
+    .replace(/\s+/g, " ").trim();
+  const base = cleaned.replace(/\d{2,4}\s*$/, "").replace(/\s+/g, " ").trim();
   const byBase = base ? resolve(base) : "";
   if (byBase) return byBase;
-  return base || text;
+  const byCleaned = cleaned ? resolve(cleaned) : "";
+  if (byCleaned) return byCleaned;
+  return base || cleaned || text;
 }
 
 /** ISO-weeknummer, zoals Zermelo dat voor liveschedule gebruikt. */
@@ -281,7 +378,9 @@ export function emptyAppData(): AppData {
     mostCancelledSubjectId: "", bestWeekday: "Maandag",
   };
   return {
-    subjects: [], teachers: [], grades: [], ptaColumns: [], appointments: [],
+    subjects: [], teachers: [], grades: [], gradeCandidates: [],
+    gradeDiagnostics: { raw: 0, accepted: 0, review: 0, dropped: 0, errors: [] },
+    ptaColumns: [], appointments: [],
     choiceGroups: [], homework: [], studyGuides: [], eloAssignments: [],
     messages: [], absences: [], stats,
   };
@@ -314,9 +413,45 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   const from = asLocalISO(new Date(Date.now() - 150 * 86_400_000));
   const to = asLocalISO(new Date(Date.now() + 180 * 86_400_000));
 
+  // Scholen gebruiken niet allemaal hetzelfde cijferpad. Probeer de bekende
+  // varianten en voeg de unieke rijen samen, zodat één afwijkend endpoint niet
+  // betekent dat de Cijferstudio leeg blijft.
+  const gradeFetchErrors: string[] = [];
+  const fetchGradesRobust = async () => {
+    if (!magisterEnabled) return null;
+    const paths = [
+      `api/aanmeldingen/${aanmeldingId}/cijfers?top=400`,
+      `api/personen/${personId}/cijfers?top=400`,
+      `api/leerlingen/${personId}/cijfers?top=400`,
+      `api/aanmeldingen/${personId}/cijfers?top=400`,
+    ].filter((path) => !path.includes("undefined") && !path.includes("/undefined/"));
+    const rows: Row[] = [];
+    const seen = new Set<string>();
+    let lastStatus = 0;
+    for (const path of paths) {
+      const res = await magister.getGradesFromPath(config, path);
+      lastStatus = res.status;
+      if (!res.ok) {
+        gradeFetchErrors.push(`${path.replace("?top=400", "")} → HTTP ${res.status}${res.error ? `: ${res.error}` : ""}`);
+        continue;
+      }
+      for (const row of list(res.data)) {
+        const key = JSON.stringify([
+          pick(row, "CijferId", "cijferId", "id", "Id"),
+          pick(row, "DatumIngevoerd", "datumIngevoerd", "Datum", "datum"),
+          pick(row, "CijferStr", "waarde", "Cijfer"),
+        ]);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(row);
+      }
+    }
+    return { ok: rows.length > 0 || paths.length === 0, data: rows, status: lastStatus };
+  };
+
   const [gradesRes, appointmentsRes, absencesRes, messagesRes, assignmentsRes, guidesRes,
     enrollmentSubjectsRes, activitiesRes, zermeloRes, zermeloUsersRes] = await Promise.allSettled([
-    magisterEnabled ? magister.getGrades(config, aanmeldingId, 400) : Promise.resolve(null),
+    fetchGradesRobust(),
     magisterEnabled && personId ? magisterAppointmentsChunked(config, personId, Date.now()) : Promise.resolve(null),
     magisterEnabled && personId ? magister.getAbsences(config, personId, from, to) : Promise.resolve(null),
     magisterEnabled ? magister.getMessages(config, 60) : Promise.resolve(null),
@@ -361,17 +496,19 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   const zermeloMe = value(zermeloUsersRes)?.ok ? unwrap(value(zermeloUsersRes)?.data) : null;
   const studentCode = str(pick(zermeloMe ?? {}, "code", "studentCode")) || str(connection.zermeloStudentCode);
 
-  /* ---- vakaliassen: afkorting -> volledige omschrijving ---- */
+  /* ---- vakaliassen: afkorting -> volledige omschrijving ----
+   * Eerst verzamelen, pas daarna toepassen. Zo kan de volledige omschrijving
+   * uit de vakkenlijst ook afkortingen uit andere school-API's herkennen. */
   const aliases = new Map<string, string>();
+  const aliasPairs: [string, string][] = [];
   rawSubjects.forEach((raw) => {
-    const description = canonicalSubject(pick(raw, "omschrijving", "Omschrijving", "naam", "Naam"), aliases);
+    const rawDescription = str(pick(raw, "omschrijving", "Omschrijving", "naam", "Naam", "Vaknaam"));
     const abbreviation = str(pick(raw, "afkorting", "Afkorting", "code", "Code"));
-    if (description) {
-      aliases.set(description.toLowerCase(), description);
-      aliases.set(keyFor(description), description);
-      if (abbreviation) { aliases.set(abbreviation.toLowerCase(), description); aliases.set(keyFor(abbreviation), description); }
-    }
+    if (!rawDescription) return;
+    aliasPairs.push([rawDescription.toLowerCase(), rawDescription], [keyFor(rawDescription), rawDescription]);
+    if (abbreviation) aliasPairs.push([abbreviation.toLowerCase(), rawDescription], [keyFor(abbreviation), rawDescription]);
   });
+  aliasPairs.forEach(([key, value]) => aliases.set(key, value));
 
   /* ---- docenten: ruwe docentcodes -> volledige namen ---- */
   const teacherNameByCode = new Map<string, string>();
@@ -423,10 +560,10 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   };
 
   const subjectMap = new Map<string, Subject>();
-  const subjectFor = (value: unknown): string => {
-    const name = canonicalSubject(value, aliases);
+  const subjectFor = (value: unknown, fallback = ""): string => {
+    const name = canonicalSubject(value, aliases) || fallback;
     if (!name) return "";
-    const key = name.toLowerCase();
+    const key = keyFor(name);
     if (!subjectMap.has(key)) {
       subjectMap.set(key, {
         id: `vak-${slug(name)}`,
@@ -437,8 +574,10 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
         teacherId: "",
         profile: profileFor(name),
         isCore: CORE.some((core) => name.toLowerCase().includes(core.toLowerCase())),
-        isExamSubject: true,
-        description: `Vakgegevens geladen uit ${connection.magisterSchool || connection.zermeloSubdomain || "de schoolkoppeling"}.`,
+        isExamSubject: name !== "Onbekend vak",
+        description: name === "Onbekend vak"
+          ? "Cijfer zonder herkenbaar vak. Koppel het in Cijferdetectie aan het juiste vak."
+          : `Vakgegevens geladen uit ${connection.magisterSchool || connection.zermeloSubdomain || "de schoolkoppeling"}.`,
       });
     }
     return subjectMap.get(key)!.id;
@@ -450,64 +589,90 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     const abbreviation = str(pick(raw, "afkorting", "Afkorting", "code", "Code"));
     const id = subjectFor(description || abbreviation);
     const teacherId = teacherFromRow(raw);
-    if (id && teacherId && subjectMap.get(keyForName(description || abbreviation))) {
-      subjectMap.get(keyForName(description || abbreviation))!.teacherId = teacherId;
-    }
+    if (id && teacherId) subjectMap.get(keyFor(description || abbreviation))!.teacherId = teacherId;
   });
-  function keyForName(value: unknown) {
-    return canonicalSubject(value, aliases).toLowerCase();
-  }
 
-  /* ---- cijfers: alléén echte, numerieke cijfers ---- */
-  // Magister-clients verschillen in veldnamen: CijferStr bevat vaak het echte
-  // rapportcijfer ("7,5"), terwijl waarde/Cijfer soms leeg zijn (en andersom).
-  const gradeValue = (g: Row): number => {
-    for (const candidate of [
+  /* ---- cijfers: tolerate wisselende veldnamen bij schoolportalen ----
+   * Alles wat we niet betrouwbaar kunnen plaatsen, gaat naar gradeCandidates
+   * en kan in de Cijferdetectie met één klik aan een vak worden gekoppeld. */
+  let droppedGrades = 0;
+  const drafts = rawGrades.map((g, index): Grade | null => {
+    if (isFalseish(pick(g, "TeltMee", "teltMee"))) { droppedGrades += 1; return null; }
+    const exemption = [
+      pick(g, "Vrijstelling", "vrijstelling"),
+      pick(g, "VakDispensatie", "vakDispensatie"),
+      pick(g, "HeeftVrijstelling", "heeftVrijstelling"),
+    ].some(isTrueish);
+    if (exemption) { droppedGrades += 1; return null; }
+
+    const valueCandidates = [
       pick(g, "CijferStr", "cijferStr"),
       pick(g, "waarde", "Waarde", "Cijfer", "cijfer", "grade", "Grade"),
       pick(g, "CijferNumeriek", "cijferNumeriek"),
-    ]) {
-      const value = num(candidate, NaN);
-      if (Number.isFinite(value)) return value;
+      findField(g, GRADE_KEYS),
+    ];
+    let value = NaN;
+    for (const candidate of valueCandidates) {
+      const parsed = parseGradeNumber(candidate);
+      if (Number.isFinite(parsed)) { value = parsed; break; }
     }
-    return NaN;
-  };
-  const numericGrades = rawGrades.filter((g) => {
-    if (pick(g, "TeltMee", "teltMee") === false) return false;
-    if ([pick(g, "Vrijstelling", "vrijstelling"), pick(g, "VakDispensatie", "vakDispensatie"), pick(g, "HeeftVrijstelling", "heeftVrijstelling")].includes(true)) return false;
-    if (num(pick(g, "CijferId", "cijferId"), 1) === 0) return false;
-    const value = gradeValue(g);
-    return Number.isFinite(value) && value > 0 && value <= 10;
-  });
+    const rawValue = str(valueCandidates.find((candidate) => str(candidate).trim())) || "—";
 
-  const grades: Grade[] = numericGrades.map((g, index) => {
-    const kolom = (pick(g, "kolom", "CijferKolom") ?? {}) as Row;
-    const vak = (pick(g, "Vak", "vak") ?? {}) as Row;
-    const rawName = str(pick(vak, "Omschrijving", "omschrijving", "Naam", "naam", "Code", "code", "Afkorting", "afkorting"))
-      || str(pick(g, "vaknaam", "VakNaam", "VakCode", "vakCode"))
-      || str(pick(g, "vak", "Vak"));
-    const subjectId = subjectFor(rawName);
-    const columnLabel = plain(pick(kolom, "KolomOmschrijving", "omschrijving", "naam", "Naam"));
-    const label = columnLabel || plain(pick(g, "omschrijving", "Omschrijving")) || "Cijfer";
-    const typeText = `${str(pick(kolom, "type", "Type"))} ${label}`.toLowerCase();
-    const isPta = /pta|schoolexamen|examen/.test(typeText) || kolom.IsPTAKolom === true || kolom.isPTAKolom === true;
-    const type: Grade["type"] = /herkans|rep\b/.test(typeText) ? "REP"
-      : /opdracht|assignment/.test(typeText) ? "Opdracht"
+    const kolom = (pick(g, "kolom", "CijferKolom", "Kolom") ?? {}) as Row;
+    const columnLabel = plain(pick(kolom, "KolomOmschrijving", "omschrijving", "naam", "Naam"))
+      || plain(findField(g, /^(kolomomschrijving|kolomlabel|description)$/i));
+    const label = columnLabel || plain(pick(g, "omschrijving", "Omschrijving", "label")) || "Cijfer";
+    const rawName = gradeSubjectName(g);
+    const subjectId = subjectFor(rawName, "Onbekend vak");
+    const canonical = canonicalSubject(rawName, aliases);
+    const valueOk = Number.isFinite(value) && value >= 0 && value <= 10;
+    const needsReview = !valueOk || !canonical || subjectId === `vak-${slug("Onbekend vak")}`;
+
+    const typeText = [
+      str(findField(g, /^(type|soort|kolomtype)$/i)),
+      str(findField(g, /^(isptakolom|ptakolom|pta)$/i)),
+      label,
+    ].join(" ").toLowerCase();
+    const isPta = /pta|schoolexamen|\bse\b|examen|eindtoets/.test(typeText) || isTrueish(findField(g, /^(isptakolom|ptakolom|pta)$/i));
+    const type: Grade["type"] = /herkans|rep\b|2e kans|tweede kans|re-examen/.test(typeText) ? "REP"
+      : /opdracht|assignment|werkstuk|practicum|presentatie/.test(typeText) ? "Opdracht"
       : isPta ? "PTA" : "SO";
-    const columnId = pick(kolom, "Id", "id", "code", "Code", "KolomCode");
-    const columnCode = str(pick(kolom, "code", "Code", "KolomCode")) || (columnId ? `KOL-${columnId}` : `KOL-${index + 1}`);
-    const date = toISO(pick(g, "DatumIngevoerd", "datumIngevoerd", "ingevoerdOp", "behaaldOp", "datum", "Datum", "date"));
-    const teacherCode = str(pick(g, "Docent", "docent"));
+
+    const columnCode = str(pick(g, "KolomCode", "kolomCode"))
+      || str(findField(kolom, COLUMN_KEYS))
+      || str(findField(g, /^kolom(code)?$/i))
+      || `KOL-${index + 1}`;
+    const weightValue = num(findField(g, /^(weegfactor|wegfactor|weging|weeging)$/i), NaN);
+    const date = toISO(findField(g, /^(datumingevoerd|datum|behaaldop|ingevoerdop|date)$/i)
+      ?? pick(g, "DatumIngevoerd", "datumIngevoerd", "ingevoerdOp", "behaaldOp", "datum", "Datum", "date"));
+    const teacherCode = str(findField(g, /^(docent|docentcode|teacher)$/i));
+
     return {
-      id: `cijfer-${pick(g, "CijferId", "id", "Id") ?? index + 1}-${index}`,
-      subjectId, value: gradeValue(g),
-      weight: num(pick(kolom, "weegfactor", "weegFactor", "WegFactor", "weging", "Weging"), 1) || 1,
-      date, label, type, columnCode,
+      id: `cijfer-${String(pick(g, "CijferId", "cijferId", "id", "Id") ?? index + 1)}-${index}`,
+      subjectId,
+      value: needsReview ? 0 : value,
+      weight: Number.isFinite(weightValue) && weightValue > 0 ? weightValue : 1,
+      date, label, type,
+      columnCode,
       teacherId: teacherCode ? teacherFor(teacherCode, true) : undefined,
-      ptaColumnId: isPta ? columnCode : undefined,
+      ptaColumnId: isPta ? `${subjectId}:${columnCode}` : undefined,
       isNew: Date.now() - new Date(date).getTime() < 3 * 86_400_000,
+      needsReview,
+      rawValue,
+      rawSubject: rawName || "onbekend",
+      rawColumn: columnLabel,
     };
-  }).filter((g) => g.subjectId);
+  }).filter((grade): grade is Grade => grade !== null);
+
+  const grades = drafts.filter((g) => !g.needsReview);
+  const gradeCandidates = drafts.filter((g) => g.needsReview);
+  const gradeDiagnostics = {
+    raw: rawGrades.length,
+    accepted: grades.length,
+    review: gradeCandidates.length,
+    dropped: droppedGrades,
+    errors: gradeFetchErrors,
+  };
 
   const ptaColumns: PtaColumn[] = Object.values(grades.reduce<Record<string, Grade[]>>((acc, g) => {
     if (!g.ptaColumnId) return acc;
@@ -515,6 +680,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     return acc;
   }, {})).map((items) => {
     const first = items[0];
+    const latest = [...items].sort((a, b) => b.date.localeCompare(a.date))[0];
     return {
       id: first.ptaColumnId!,
       subjectId: first.subjectId,
@@ -523,7 +689,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
       weight: first.weight,
       date: first.date,
       retakeable: items.some((g) => g.type === "REP") || /herkans/i.test(first.label),
-      gradeId: items[items.length - 1].id,
+      gradeId: latest.id,
     };
   }).sort((a, b) => a.subjectId.localeCompare(b.subjectId) || a.date.localeCompare(b.date));
 
@@ -542,7 +708,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     const cancelled = CANCELLED.has(status) || Boolean(pick(a, "Geannuleerd", "cancelled"));
     const description = plain(pick(a, "Inhoud"));
     const title = plain(pick(a, "Omschrijving", "omschrijving", "Titel"))
-      || (subjectId ? subjectMap.get(keyForName(subjectName))?.name ?? "Les" : "Les");
+      || (subjectId ? subjectMap.get(keyFor(subjectName))?.name ?? "Les" : "Les");
     const testText = `${title} ${description} ${str(pick(a, "WeergaveType"))}`.toLowerCase();
     const isTest = (infoType >= 2 && infoType <= 5)
       || /toets|tentamen|examen|pta|\bso\b|overhoring|schriftelijk/.test(testText);
@@ -877,7 +1043,8 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
       messages: messages.length,
     },
     data: {
-      subjects: [...subjectMap.values()], teachers: [...teacherMap.values()], grades, ptaColumns, appointments,
+      subjects: [...subjectMap.values()], teachers: [...teacherMap.values()],
+      grades, gradeCandidates, gradeDiagnostics, ptaColumns, appointments,
       choiceGroups, homework, studyGuides, eloAssignments, messages, absences,
       stats: {
         lessonsAttended: appointments.filter((a) => !a.cancelled && a.type === "les").length,

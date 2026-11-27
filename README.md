@@ -45,6 +45,14 @@ MAGISTERPRO_URL=https://magisterpro.vercel.app npx cap sync android   # daarna b
 MAGISTERPRO_URL=https://magisterpro.vercel.app npx cap sync ios       # op macOS, daarna build in Xcode
 ```
 
+### APK downloaden op je telefoon
+
+De gesigneerde release-APK wordt automatisch gebouwd door `.github/workflows/android-apk.yml` en staat op:
+
+**[Download MagisterPro.apk](https://github.com/oolievier/magisterpro/releases/download/android-apk/magisterpro.apk)**
+
+Open de link op je telefoon, tik op het bestand en sta installatie van onbekende bronnen toe. De app laadt de live webapp van `https://magisterpro.vercel.app`, zodat je altijd de nieuwste versie hebt. Nieuwe APK's gebruiken dezelfde signing key, dus een update overschrijft de vorige installatie. Om een APK opnieuw te bouwen: `gh workflow run android-apk.yml` (of push een `v*`-tag). De signing key staat in GitHub Secrets, niet in de repo.
+
 Op Android kan het systeem een keuzedialog tonen als de officiële Magister-app hetzelfde `m6loapp`-scheme heeft geregistreerd; kies dan MagisterPro.
 
 ### MagisterPro-browserextensie (skin + sessie-overdracht)

@@ -3,13 +3,17 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  CheckCircle2, ExternalLink, GraduationCap, KeyRound, Link2, Loader2, LogOut, Palette,
+  CalendarDays, CheckCircle2, Copy, ExternalLink, GraduationCap, KeyRound, Link2, Loader2, LogOut, Palette,
   Radio, RefreshCw, RotateCcw, ShieldCheck, Sparkles, XCircle,
 } from "lucide-react";
 import { useApp, ACCENTS } from "@/app/providers";
 import { normalizeMagisterHost } from "@/lib/api/magister";
 import { openMagister } from "@/lib/extension";
 import { exchangeZermeloCode } from "@/lib/api/zermelo";
+import {
+  calendarFeedUrl, ensureCalendarToken, getCalendarToken,
+  publishCalendarFeed, revokeCalendarFeed, rotateCalendarFeed,
+} from "@/lib/calendar";
 import { toast } from "@/components/ui/Toaster";
 import { Pill } from "@/components/ui/Primitives";
 import type { EducationLevel, AccentName, ThemeName } from "@/lib/types";
@@ -28,7 +32,7 @@ export default function SettingsPage() {
     state, patch, setTheme, setAccent, refresh, logout, resetLocalData,
     savedZermeloKey, saveZermeloKey, forgetZermeloKey,
     setSubjectColor, resetSubjectColors,
-    loading, loadError, lastSync, data,
+    loading, loadError, lastSync, data, appointments,
   } = useApp();
   const c = state.connection;
   const [mSchool, setMSchool] = useState(c.magisterSchool);
@@ -37,8 +41,11 @@ export default function SettingsPage() {
   const [zBusy, setZBusy] = useState(false);
   const [zMessage, setZMessage] = useState("");
   const [extMessage, setExtMessage] = useState("");
+  const [calendarToken, setCalendarToken] = useState("");
+  const [calendarBusy, setCalendarBusy] = useState(false);
 
   useEffect(() => { setMSchool(c.magisterSchool); }, [c.magisterSchool]);
+  useEffect(() => { setCalendarToken(getCalendarToken()); }, []);
 
   const saveMagisterSchool = () => {
     try {
@@ -86,6 +93,41 @@ export default function SettingsPage() {
       toast("Zermelo koppeling mislukt", "warning", res.error);
     }
     setZBusy(false);
+  };
+
+  const createFeed = async () => {
+    setCalendarBusy(true);
+    const token = ensureCalendarToken();
+    setCalendarToken(token);
+    const ok = await publishCalendarFeed(appointments, data.subjects, data.teachers);
+    setCalendarBusy(false);
+    toast(ok ? "Agenda-link klaar" : "Link aangemaakt", ok ? "success" : "warning",
+      ok ? "Plak de link in Google Agenda, Apple Kalender of Outlook." : "De link is aangemaakt; de eerste sync volgt zodra je rooster laadt.");
+  };
+
+  const rotateFeed = async () => {
+    setCalendarBusy(true);
+    await rotateCalendarFeed(appointments, data.subjects, data.teachers);
+    setCalendarToken(getCalendarToken());
+    setCalendarBusy(false);
+    toast("Nieuwe agenda-link aangemaakt", "success", "De oude link werkt niet meer.");
+  };
+
+  const removeFeed = () => {
+    revokeCalendarFeed();
+    setCalendarToken("");
+    toast("Agenda-link verwijderd", "info", "Je rooster staat niet meer in de gekoppelde agenda.");
+  };
+
+  const copyFeed = async () => {
+    const url = calendarFeedUrl(calendarToken);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Agenda-link gekopieerd", "success", "Plak hem bij ‘Abonneren op URL’ in je agenda-app.");
+    } catch {
+      toast("Kopiëren niet gelukt", "warning", "Selecteer de link hierboven handmatig.");
+    }
   };
 
   return (
@@ -223,6 +265,57 @@ export default function SettingsPage() {
           <Pill tone="neutral">{data.subjects.length} vakken · {data.grades.length} cijfers</Pill>
           {loadError && <span className="text-[11px] text-rose-400">{loadError}</span>}
         </div>
+      </section>
+
+      <section className="panel p-5">
+        <div className="mb-4 flex items-center gap-2.5">
+          <span className="rounded-xl bg-accent/12 p-2 text-accent"><CalendarDays size={17} /></span>
+          <div>
+            <h2 className="section-title">Agenda-abonnement (iCal)</h2>
+            <p className="text-xs text-slate-500 dark:text-white/45">Eén privé-link voor je hele rooster in Google Agenda, Apple Kalender of Outlook.</p>
+          </div>
+        </div>
+
+        {calendarToken ? (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-slate-200 p-4 dark:border-white/[0.08]">
+              <label className="label" htmlFor="calendar-feed">Jouw privé-link</label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="calendar-feed"
+                  readOnly
+                  className="input mono min-w-0 flex-1 text-[11px]"
+                  value={calendarFeedUrl(calendarToken)}
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <button onClick={() => void copyFeed()} className="btn-secondary justify-center"><Copy size={13} /> Kopieer link</button>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-white/45">
+                Gebruik in je agenda-app <strong>Abonneren op URL</strong> / <strong>Nieuwe abonnement-locatie</strong>. De link bevat jouw rooster — deel hem niet met anderen.
+              </p>
+              <p className="mt-1 text-[10px] text-slate-400 dark:text-white/35">
+                Vernieuwt automatisch wanneer je MagisterPro opent of de extensie een nieuwe sessie ziet. {lastSync ? `Laatste sync: ${lastSync.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}.` : "Nog geen sync uitgevoerd."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => void createFeed()} disabled={calendarBusy} className="btn-secondary">
+                {calendarBusy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Rooster nu publiceren
+              </button>
+              <button onClick={() => void rotateFeed()} disabled={calendarBusy} className="btn-secondary"><RefreshCw size={13} /> Nieuwe link maken</button>
+              <button onClick={removeFeed} className="btn-secondary !text-rose-400"><XCircle size={13} /> Verwijder link</button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-white/[0.08] sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-800 dark:text-white/90">Nog geen agenda-link</p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">Maak een willekeurige privé-link. Er wordt geen Magister-wachtwoord of token in de URL gezet.</p>
+            </div>
+            <button onClick={() => void createFeed()} disabled={calendarBusy} className="btn-primary shrink-0">
+              {calendarBusy ? <Loader2 size={14} className="animate-spin" /> : <CalendarDays size={14} />} Maak iCal-link
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="panel p-5">

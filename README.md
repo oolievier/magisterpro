@@ -6,7 +6,7 @@ Een "Student Operating System" voor Nederlandse middelbare scholieren: een moder
 
 - **Command Center** — live-lestracker, actie-radar en cijfer-impactfeed.
 - **Cijferstudio Pro** — vakkaarten, "wat moet ik halen?", multi-vak sandbox, slaag/zak-check volgens de officiële regels, analytics en een cijfer-recordboek.
-- **Super-Rooster** — urenraster met dagen bovenaan en uren naar beneden, klikbare lessen met details/acties, dag-/week-/maand-/agendaweergave, Zermelo Hub, KWT-inschrijving met capaciteit en conflictdetectie, tussenuur-optimizer en `.ics`-export.
+- **Super-Rooster** — urenraster met dagen bovenaan en uren naar beneden, klikbare lessen met details/acties, dag-/week-/maand-/agendaweergave, Zermelo Hub, KWT-inschrijving met capaciteit en conflictdetectie, tussenuur-optimizer, `.ics`-export en een privé iCal-abonnement.
 - **PTA & Examenkluis** — voortgang per PTA-kolom, schoolexamen-gemiddelde en een herkansings-adviseur gesorteerd op rendement.
 - **Toets- & Huiswerkplanner** — Kanban met drag-and-drop, automatisch terugrekenend leerplan, tijdblokkades en een Pomodoro/XP-focusdock met omgevingsgeluid.
 - **Studiewijzer & ELO** — studiewijzers, inleveropdrachten en markdown-notities per vak; echte leermiddelen openen via de schoolproxy of wisselen naar het portaal.
@@ -73,6 +73,12 @@ Buiten de native shell gebruikt MagisterPro de QR-handshake van de open-source [
 5. Verlopen tokens worden via `/api/auth/magister/token` vernieuwd (publieke client `iam-profile`).
 
 De koppelsessies leven kort in Vercel Blob (`BLOB_READ_WRITE_TOKEN`, automatisch aan dit project verbonden). Zonder die token gebruikt een lokale ontwikkelomgeving een in-memory opslag. Er is geen extra service of geregistreerde OAuth-client nodig. De QR-code kan alleen worden gescand met een app die dit gateway-protocol ondersteunt.
+
+### Rooster in je agenda (iCal-abonnement)
+
+In **Instellingen → Agenda-abonnement (iCal)** maak je één willekeurige privé-link: `/api/calendar/<token>.ics`. Plak die link bij *Abonneren op URL* in Google Agenda, Apple Kalender of Outlook. De feed bevat het gecombineerde Magister + Zermelo-rooster, inclusief gekozen KWT-lessen, locaties, docenten en uitval.
+
+De link wordt bijgewerkt bij elke echte sync en bij gewijzigde inschrijvingen. De token staat alléén in `localStorage` van jouw browser; er staat geen Magister-wachtwoord of sessie in de URL of op de server. De .ics zelf wordt anoniem in Vercel Blob bewaard (lokaal: in-memory), met een 5-minuten CDN-cache. **Nieuwe link maken** trekt de oude direct in; **Verwijder link** verwijdert zowel de lokale token als de feed. Zonder de app of extensie te openen kan de server niet zelfstandig bij Magister vernieuwen — dat zou een opgeslagen sessie vereisen, en die willen we juist niet hebben.
 
 ## Techniek
 

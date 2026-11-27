@@ -4,6 +4,7 @@ import type {
   Grade,
   Homework,
   Subject,
+  Teacher,
   ChoiceOption,
 } from "@/lib/types";
 import { weightedAverage, round1 } from "@/lib/calculations/grades";
@@ -216,10 +217,42 @@ export function conflictsFor(
  * .ics-export (Magister + Zermelo gecombineerd)
  * ------------------------------------------------------------------------- */
 
-const icsEscape = (s: string) => s.replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+const icsEscape = (s: string) => s.replace(/([,;\\])/g, "\\$1").replace(/\r?\n/g, "\\n");
 const icsDate = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
-export function buildICS(appointments: Appointment[], subjects: Subject[]): string {
+/** ICS-regels mogen maximaal 75 octetten zijn; continueren begint met een spatie. */
+function foldICSLine(line: string): string {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let current = "";
+  let bytes = 0;
+  for (const char of line) {
+    const size = encoder.encode(char).length;
+    const limit = chunks.length ? 74 : 75;
+    if (bytes + size > limit) {
+      chunks.push(current);
+      current = ` ${char}`;
+      bytes = 1 + size;
+    } else {
+      current += char;
+      bytes += size;
+    }
+  }
+  chunks.push(current);
+  return chunks.join("\r\n");
+}
+
+/**
+ * Bouwt een complete iCal-tekst uit het gecombineerde rooster.
+ * Dezelfde generator dient voor de .ics-download en het abonnement, zodat
+ * beide altijd identieke, stabiele UID's hebben.
+ */
+export function buildICS(
+  appointments: Appointment[],
+  subjects: Subject[],
+  teachers: Teacher[] = []
+): string {
+  const issued = icsDate(new Date().toISOString());
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -227,27 +260,42 @@ export function buildICS(appointments: Appointment[], subjects: Subject[]): stri
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "X-WR-CALNAME:MagisterPro Rooster",
+    "X-WR-TIMEZONE:Europe/Amsterdam",
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
   ];
   appointments.forEach((a) => {
     const subject = subjects.find((s) => s.id === a.subjectId);
+    const teacher = teachers.find((t) => t.id === a.teacherId)?.name;
+    const details = [
+      subject?.name,
+      a.type,
+      a.toetsType,
+      teacher ? `docent: ${teacher}` : "",
+      a.originalLocation && a.originalLocation !== a.location ? `lokaal was ${a.originalLocation}` : "",
+      `bron: ${a.source}`,
+    ].filter(Boolean).join(" · ");
     lines.push(
       "BEGIN:VEVENT",
       `UID:${a.id}@magisterpro`,
-      `DTSTAMP:${icsDate(new Date().toISOString())}`,
+      `DTSTAMP:${issued}`,
       `DTSTART:${icsDate(a.start)}`,
       `DTEND:${icsDate(a.end)}`,
       `SUMMARY:${icsEscape(a.cancelled ? `[UITGEVALLEN] ${a.title}` : a.title)}`,
-      `LOCATION:${icsEscape(a.location)}`,
-      `DESCRIPTION:${icsEscape(`${subject?.name ?? ""} · ${a.type}${a.toetsType ? ` · ${a.toetsType}` : ""} · bron: ${a.source}`)}`,
+      `LOCATION:${icsEscape(a.location || "Onbekend lokaal")}`,
+      `DESCRIPTION:${icsEscape(details)}`,
+      a.cancelled ? "STATUS:CANCELLED" : "STATUS:CONFIRMED",
+      ...(a.type === "toets" && !a.cancelled
+        ? ["BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:Toets begint over 15 minuten", "TRIGGER:-PT15M", "END:VALARM"]
+        : []),
       "END:VEVENT"
     );
   });
   lines.push("END:VCALENDAR");
-  return lines.join("\r\n");
+  return lines.map(foldICSLine).join("\r\n");
 }
 
-export function downloadICS(appointments: Appointment[], subjects: Subject[]) {
-  const blob = new Blob([buildICS(appointments, subjects)], { type: "text/calendar;charset=utf-8" });
+export function downloadICS(appointments: Appointment[], subjects: Subject[], teachers: Teacher[] = []) {
+  const blob = new Blob([buildICS(appointments, subjects, teachers)], { type: "text/calendar;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

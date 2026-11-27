@@ -135,7 +135,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     list.push(
       { id: "action-focus", group: "Acties", label: "Start een focus-sessie", detail: "25/5 of 50/10 Pomodoro", icon: Timer, keywords: "timer studeren pomo", action: () => { window.dispatchEvent(new CustomEvent("magisterpro:focus")); onClose(); } },
       { id: "action-test", group: "Acties", label: "Toets toevoegen", detail: "Plan een nieuwe toets of taak", icon: ClipboardCheck, keywords: "toets toevoegen nieuw", action: () => go("/planner?add=1") },
-      { id: "action-export", group: "Acties", label: "Exporteer rooster (.ics)", detail: "Magister + Zermelo gecombineerd", icon: Download, keywords: "export calendar ics", action: () => { downloadICS(appointments, data.subjects); toast("Rooster geëxporteerd", "success", "magisterpro-rooster.ics"); onClose(); } },
+      { id: "action-export", group: "Acties", label: "Exporteer rooster (.ics)", detail: "Magister + Zermelo gecombineerd", icon: Download, keywords: "export calendar ics", action: () => { downloadICS(appointments, data.subjects, data.teachers); toast("Rooster geëxporteerd", "success", "magisterpro-rooster.ics"); onClose(); } },
       { id: "action-grade", group: "Acties", label: "Cijferstudio openen", detail: "Slaag/zak-check en simulaties", icon: Zap, keywords: "slaag zak simulator", action: () => go("/grades") },
     );
 

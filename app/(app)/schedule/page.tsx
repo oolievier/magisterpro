@@ -110,7 +110,7 @@ function ScheduleView() {
         <div><p className="mb-1 text-xs font-medium text-accent">Super-Rooster</p><h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">Rooster & Zermelo Hub</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-white/45">Magister + Zermelo samengevoegd tot één waarheid.</p></div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => { downloadICS(allAppointments, data.subjects); toast("Rooster geëxporteerd", "success", "Open de .ics in Apple- of Google Calendar."); }} className="btn-secondary"><Download size={15} /> Exporteer .ics</button>
+          <button onClick={() => { downloadICS(allAppointments, data.subjects, data.teachers); toast("Rooster geëxporteerd", "success", "Open de .ics in Apple- of Google Calendar."); }} className="btn-secondary"><Download size={15} /> Exporteer .ics</button>
           <button onClick={() => setAddOpen(true)} className="btn-primary"><CalendarPlus size={15} /> Toets/toevoegen</button>
         </div>
       </div>

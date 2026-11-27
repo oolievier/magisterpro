@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { emptyAppData, fetchLiveData } from "@/lib/api/live-data";
 import { toast } from "@/components/ui/Toaster";
+import { publishCalendarFeed } from "@/lib/calendar";
 import type {
   AppData, PersistedState, AccentName, ThemeName, HomeworkStatus, EloStatus,
   Grade, ChoiceGroup, Message, BlockedSlot, Appointment,
@@ -430,6 +431,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
     });
     return [...liveData.appointments, ...extra].sort((a, b) => a.start.localeCompare(b.start));
   }, [liveData.appointments, liveData.choiceGroups, state.enrollments]);
+
+  // De iCal-feed wordt bij elke echte sync (en bij gewijzigde KWT-keuzes)
+  // opnieuw gepubliceerd. Zonder token is dit een no-op.
+  useEffect(() => {
+    if (!lastSync) return;
+    void publishCalendarFeed(appointments, data.subjects, data.teachers);
+  }, [appointments, data.subjects, data.teachers, lastSync]);
 
   const saveZermeloKey = useCallback(() => {
     const c = connectionRef.current;

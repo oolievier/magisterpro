@@ -4,11 +4,12 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import { Search, Bell, Clock3, Timer, Command, ArrowUpRight, AlertTriangle, CalendarClock, BookOpen, ChevronRight } from "lucide-react";
+import { Search, Bell, Clock3, Timer, Command, ArrowUpRight, AlertTriangle, CalendarClock, BookOpen, ChevronRight, ExternalLink } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { ThemeControls } from "./ThemeControls";
 import { NAV } from "./Sidebar";
 import { daysUntil, hoursUntil } from "@/lib/format";
+import { openMagister } from "@/lib/extension";
 
 export function Topbar({ onSearch }: { onSearch: () => void }) {
   const pathname = usePathname();
@@ -55,6 +56,15 @@ export function Topbar({ onSearch }: { onSearch: () => void }) {
         title="Start een focus-sessie"
       >
         <Timer size={18} />
+      </button>
+      <button
+        onClick={() => openMagister(state.connection.magisterSchool)}
+        className="btn-ghost hidden !px-2.5 sm:inline-flex"
+        title="Wissel naar het echte Magister-portaal"
+        aria-label="Wissel naar Magister"
+      >
+        <ExternalLink size={15} />
+        <span className="text-[11px] font-semibold">Magister</span>
       </button>
       <ThemeControls />
 

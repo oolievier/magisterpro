@@ -7,10 +7,11 @@ import type { Grade, PtaColumn, Subject, EducationLevel } from "@/lib/types";
 export const round1 = (n: number) => Math.round((n + Number.EPSILON) * 10) / 10;
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-/** Gewogen gemiddelde. Gaat veilig om met een lege lijst. */
+/** Gewogen gemiddelde. Geen cijfers betekent "geen waarde", niet nul. */
 export function weightedAverage(grades: Grade[]): number {
+  if (!grades.length) return NaN;
   const total = grades.reduce((sum, g) => sum + g.weight, 0);
-  if (total <= 0) return 0;
+  if (total <= 0) return NaN;
   return grades.reduce((sum, g) => sum + g.value * g.weight, 0) / total;
 }
 
@@ -66,7 +67,7 @@ export function subjectStats(
     trend,
     spread,
     ptaProgress: allWeight ? (doneWeight / allWeight) * 100 : 0,
-    nextRoundGap: Math.max(0, round2(roundedUp - avg)),
+    nextRoundGap: own.length ? Math.max(0, round2(roundedUp - avg)) : 0,
   };
 }
 
@@ -104,6 +105,7 @@ export type ExamStatus = "op-koers" | "aandacht" | "gevaar";
 
 export interface ExamCheck {
   status: ExamStatus;
+  hasData: boolean;
   label: string;
   summary: string;
   roundedGrades: { subjectId: string; raw: number; rounded: number; core: boolean; count: number }[];
@@ -169,10 +171,11 @@ export function examCheck(
     .map((r) => ({ subjectId: r.subjectId, points: deficitFor(r.rounded) }));
   const deficitPoints = deficits.reduce((s, d) => s + d.points, 0);
   const compensationPoints = roundedGrades.reduce((s, r) => s + compensationFor(r.rounded), 0);
-  const averageRounded = roundedGrades.length
+  const hasData = roundedGrades.length > 0;
+  const averageRounded = hasData
     ? roundedGrades.reduce((s, r) => s + r.rounded, 0) / roundedGrades.length
-    : 0;
-  const averageOk = averageRounded >= 6;
+    : NaN;
+  const averageOk = hasData && averageRounded >= 6;
 
   const tips = subjects
     .filter((s) => s.isExamSubject)
@@ -195,19 +198,22 @@ export function examCheck(
     .sort((a, b) => b.gain - a.gain)
     .slice(0, 3);
 
-  const balanceOk = compensationPoints >= deficitPoints && coreOk && averageOk;
-  const status: ExamStatus = balanceOk && averageRounded >= 6.4 ? "op-koers" : balanceOk ? "aandacht" : "gevaar";
-  const label = status === "op-koers" ? "Ruim op koers" : status === "aandacht" ? "Aandachtspunt" : "Gevarenzone";
+  const balanceOk = hasData && compensationPoints >= deficitPoints && coreOk && averageOk;
+  const status: ExamStatus = !hasData ? "gevaar" : balanceOk && averageRounded >= 6.4 ? "op-koers" : balanceOk ? "aandacht" : "gevaar";
+  const label = !hasData ? "Nog geen cijfers" : status === "op-koers" ? "Ruim op koers" : status === "aandacht" ? "Aandachtspunt" : "Gevarenzone";
 
   const examYear = EXAM_YEARS.has(level);
-  const baseSummary = status === "op-koers"
-    ? "Je staat er goed voor. Blijf je compensatiepunten behouden."
-    : status === "aandacht"
-      ? "Je haalt net aan de eisen, maar er is weinig marge over."
-      : `Er zijn ${Math.max(0, deficitPoints - compensationPoints)} tekortpunten te veel of een kernvakregeling wordt geschonden.`;
+  const baseSummary = !hasData
+    ? "Zodra echte cijfers uit je schoolportaal binnenkomen, verschijnt hier je slaag/zak-check."
+    : status === "op-koers"
+      ? "Je staat er goed voor. Blijf je compensatiepunten behouden."
+      : status === "aandacht"
+        ? "Je haalt net aan de eisen, maar er is weinig marge over."
+        : `Er zijn ${Math.max(0, deficitPoints - compensationPoints)} tekortpunten te veel of een kernvakregeling wordt geschonden.`;
 
   return {
     status,
+    hasData,
     label,
     summary: examYear
       ? baseSummary

@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { BookOpenText, ClipboardList, NotebookPen, Download, CheckCircle2, Clock3, Paperclip, ChevronDown, Eye, Pencil, Send, FileText, CalendarClock } from "lucide-react";
+import { BookOpenText, ClipboardList, NotebookPen, Download, CheckCircle2, Clock3, Paperclip, ChevronDown, Eye, Pencil, Send, FileText, CalendarClock, ExternalLink } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { Pill, ProgressBar } from "@/components/ui/Primitives";
 import { daysUntil, relativeDeadline, shortDate } from "@/lib/format";
 import { toast } from "@/components/ui/Toaster";
-import { downloadMagisterFile } from "@/lib/api/magister";
+import { downloadMagisterFile, normalizeMagisterHost, openMagisterFile } from "@/lib/api/magister";
+import { openMagister } from "@/lib/extension";
 import { SubjectBadge } from "@/components/ui/SubjectBadge";
 import type { EloStatus, StudyGuideAttachment } from "@/lib/types";
 
@@ -39,23 +40,31 @@ export default function EloPage() {
   const openCount = assignments.filter((a) => a.status === "open").length;
   const note = state.notes[noteSubject] ?? "";
 
-  /** Opent de echte bijlage via de schoolproxy, of downloads de tekstvoorlooper. */
+  /** Opent de echte bijlage via de schoolproxy, of wisselt naar het portaal. */
   const openAttachment = async (attachment: StudyGuideAttachment) => {
     const config = { subdomain: state.connection.magisterSchool, token: state.connection.magisterToken };
+    const portal = () => {
+      try { return `https://${normalizeMagisterHost(state.connection.magisterSchool)}`; }
+      catch { return "https://accounts.magister.net/"; }
+    };
     if (!config.subdomain || !config.token) {
-      toast("Magister niet gekoppeld", "warning", "Deze bijlage is alleen via je Magister-portaal beschikbaar.");
+      toast("Magister niet gekoppeld", "warning", "Het leermiddel wordt in het schoolportaal geopend.");
+      openMagister(state.connection.magisterSchool);
       return;
     }
     if (attachment.url) {
       try {
-        await downloadMagisterFile(config, attachment.url, attachment.name);
-        toast("Leermiddel gedownload", "success", attachment.name);
+        await openMagisterFile(config, attachment.url, attachment.name);
+        toast("Leermiddel geopend", "success", attachment.name);
         return;
       } catch (error) {
-        toast("Leermiddel niet direct beschikbaar", "warning", error instanceof Error ? error.message : "Open het portaal via de knop eronder.");
+        toast("Leermiddel niet direct beschikbaar", "warning", error instanceof Error ? error.message : "Het schoolportaal wordt geopend.");
+        openMagister(state.connection.magisterSchool);
+        return;
       }
     }
-    toast("Geen directe link", "info", "Deze schoolpubliceert het leermiddel alleen in het schoolportaal.");
+    toast("Alleen in het schoolportaal", "info", "Deze school publiceert het leermiddel alleen in Magister.");
+    openMagister(portal());
   };
 
   const download = (name: string, content: string) => {
@@ -101,8 +110,8 @@ export default function EloPage() {
                     <div className="space-y-1.5">{g.goals.map((goal) => <p key={goal} className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-white/60"><CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-400" />{goal}</p>)}</div>
                     <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Bijlagen</p>
                     <div className="flex flex-wrap gap-2">{g.attachments.map((a) => (
-                      <button key={a.id} onClick={() => void openAttachment(a)} title={a.url ? "Download via je schoolkoppeling" : "Alleen via het schoolportaal beschikbaar"}
-                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-medium text-slate-600 transition hover:border-accent/40 hover:text-accent dark:border-white/10 dark:text-white/60"><Paperclip size={11} />{a.name}<Download size={11} /></button>
+                      <button key={a.id} onClick={() => void openAttachment(a)} title={a.url ? "Open via je schoolkoppeling" : "Open in het schoolportaal"}
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-medium text-slate-600 transition hover:border-accent/40 hover:text-accent dark:border-white/10 dark:text-white/60"><Paperclip size={11} />{a.name}<ExternalLink size={11} /></button>
                     ))}
                     {g.attachments.length === 0 && <p className="text-[10px] text-slate-400">Geen bijlagen in deze studiewijzer.</p>}</div>
                     <button onClick={() => { setTab("notes"); setNoteSubject(subject.id); setDraft(state.notes[subject.id] ?? ""); }} className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-accent">Open vak-notities <span>→</span></button>
@@ -128,8 +137,8 @@ export default function EloPage() {
                   {e.attachments.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {e.attachments.map((a) => (
-                        <button key={a.id} onClick={() => void openAttachment(a)} title={a.url ? "Download via je schoolkoppeling" : "Alleen via het schoolportaal beschikbaar"}
-                          className="flex items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/[0.06] px-2 py-1 text-[10px] font-semibold text-accent transition hover:bg-accent/15"><Paperclip size={10} />{a.name}<Download size={10} /></button>
+                        <button key={a.id} onClick={() => void openAttachment(a)} title={a.url ? "Open via je schoolkoppeling" : "Open in het schoolportaal"}
+                          className="flex items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/[0.06] px-2 py-1 text-[10px] font-semibold text-accent transition hover:bg-accent/15"><Paperclip size={10} />{a.name}<ExternalLink size={10} /></button>
                       ))}
                     </div>
                   )}

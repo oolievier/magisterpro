@@ -9,6 +9,46 @@ var APP_MATCHES = [
   "http://localhost:3000/*",
   "http://127.0.0.1:3000/*",
 ];
+var MAGISTER_MATCHES = [
+  "https://accounts.magister.net/*",
+  "https://*.magister.net/*",
+  "https://*.magister.nl/*",
+];
+var ACCOUNTS_URL = "https://accounts.magister.net/";
+
+/** Accepteert alleen een kale, whitelisted Magister-host uit de webpagina. */
+function cleanMagisterHost(value) {
+  var host = String(value || "").trim().toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+  return /^[a-z0-9-]+\.magister\.(net|nl)$/.test(host) ? host : "";
+}
+
+/** Focus een bestaande app-tab en navigeer hem naar het gevraagde pad. */
+async function focusOrOpenApp(url) {
+  try {
+    var tabs = await chrome.tabs.query({ url: APP_MATCHES });
+    var tab = tabs.find(function (t) { return t.id != null; });
+    if (tab && tab.id != null) {
+      await chrome.tabs.update(tab.id, { active: true, url: url });
+      return;
+    }
+  } catch (_) { /* valt terug op nieuwe tab */ }
+  await chrome.tabs.create({ url: url });
+}
+
+/** Focus een bestaande Magister-tab met exact dezelfde URL, anders nieuwe tab. */
+async function focusOrOpenMagister(url) {
+  try {
+    var tabs = await chrome.tabs.query({ url: MAGISTER_MATCHES });
+    var tab = tabs.find(function (t) { return t.url === url && t.id != null; });
+    if (tab && tab.id != null) {
+      await chrome.tabs.update(tab.id, { active: true });
+      return;
+    }
+  } catch (_) { /* valt terug op nieuwe tab */ }
+  await chrome.tabs.create({ url: url });
+}
 
 async function currentSession() {
   var data = await chrome.storage.local.get(STORAGE_KEY);
@@ -69,8 +109,22 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (path.charAt(0) !== "/") path = "/" + path;
     chrome.storage.local.get(APP_ORIGIN_KEY).then(function (data) {
       var base = data[APP_ORIGIN_KEY] || APP_URL;
-      chrome.tabs.create({ url: base + path });
+      return focusOrOpenApp(base + path);
+    }).then(function () {
       sendResponse({ ok: true });
+    }).catch(function (error) {
+      sendResponse({ ok: false, error: String(error && error.message || error) });
+    });
+    return true;
+  }
+
+  if (message.type === "MAGISTERPRO_OPEN_MAGISTER") {
+    var host = cleanMagisterHost(message.school);
+    var target = host ? "https://" + host + "/" : ACCOUNTS_URL;
+    focusOrOpenMagister(target).then(function () {
+      sendResponse({ ok: true, url: target });
+    }).catch(function (error) {
+      sendResponse({ ok: false, error: String(error && error.message || error) });
     });
     return true;
   }

@@ -22,8 +22,8 @@ type View = "dag" | "week" | "raster" | "maand" | "agenda";
 function ScheduleView() {
   const router = useRouter();
   const params = useSearchParams();
-  const { data, state, now, appointments } = useApp();
-  const [view, setView] = useState<View>("week");
+  const { data, state, now, appointments, addHomework } = useApp();
+  const [view, setView] = useState<View>("raster");
   const [selectedDay, setSelectedDay] = useState(now.toISOString().slice(0, 10));
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [kwtGroup, setKwtGroup] = useState<ChoiceGroup | null>(null);
@@ -32,6 +32,7 @@ function ScheduleView() {
   const [newSubject, setNewSubject] = useState(data.subjects[0]?.id ?? "");
   const [newDate, setNewDate] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
   const [customTests, setCustomTests] = useState<Appointment[]>([]);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
   useEffect(() => { if (params.get("kwt") === "1" && data.choiceGroups[0]) setKwtGroup(data.choiceGroups[0]); }, [params, data.choiceGroups]);
 
@@ -61,12 +62,13 @@ function ScheduleView() {
   }, [filtered]);
 
   const dayStats = (iso: string) => {
-    const appts = filtered.filter((a) => a.start.slice(0, 10) === iso && !a.cancelled);
-    const gaps = findFreeGaps(appts);
+    const appts = filtered.filter((a) => a.start.slice(0, 10) === iso);
+    const active = appts.filter((a) => !a.cancelled);
+    const gaps = findFreeGaps(active);
     return {
-      appts, gaps,
-      start: appts.length ? timeLabel(appts[0].start) : "—",
-      end: appts.length ? timeLabel(appts[appts.length - 1].end) : "—",
+      appts, active, gaps,
+      start: active.length ? timeLabel(active[0].start) : "—",
+      end: active.length ? timeLabel(active[active.length - 1].end) : "—",
       gapMinutes: gaps.reduce((s, g) => s + g.minutes, 0),
     };
   };
@@ -76,7 +78,11 @@ function ScheduleView() {
     const current = new Date(a.start) <= now && new Date(a.end) > now;
     return (
       <motion.div key={a.id} layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ y: -1 }}
-        className={`relative overflow-hidden rounded-xl border p-2.5 transition ${a.cancelled ? "border-rose-500/60 bg-rose-500/[0.12]" : a.type === "toets" ? "border-amber-400/50 bg-amber-400/[0.08] ring-1 ring-amber-400/20" : "border-slate-200 bg-white dark:border-white/[0.08] dark:bg-white/[0.03]"} ${current ? "ring-2 ring-accent/50" : ""}`}
+        role="button" tabIndex={0}
+        aria-label={`${a.title}, ${timeLabel(a.start)} tot ${timeLabel(a.end)} — open details`}
+        onClick={() => setSelectedAppointment(a)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedAppointment(a); } }}
+        className={`relative cursor-pointer overflow-hidden rounded-xl border p-2.5 transition hover:border-accent/50 ${a.cancelled ? "border-rose-500/60 bg-rose-500/[0.12]" : a.type === "toets" ? "border-amber-400/50 bg-amber-400/[0.08] ring-1 ring-amber-400/20" : "border-slate-200 bg-white dark:border-white/[0.08] dark:bg-white/[0.03]"} ${current ? "ring-2 ring-accent/50" : ""}`}
         style={{ borderLeftColor: a.cancelled ? "#f43f5e" : a.type === "toets" ? "#f59e0b" : subject?.color, borderLeftWidth: 3 }}>
         {current && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" style={{ width: `${progressInLesson(a.start, a.end, now)}%` }} />}
         <div className="flex items-start justify-between gap-1">
@@ -241,12 +247,16 @@ function ScheduleView() {
 
       {view === "raster" && (() => {
         const pad = (n: number) => String(n).padStart(2, "0");
-        const dayStart = (iso: string) => new Date(`${iso}T${pad(schoolHours[0])}:00:00`).getTime();
-        const totalMs = schoolHours.length * 3_600_000;
-        const pos = (iso: string, start: string, end: string) => {
-          const left = Math.max(0, Math.min(100, (new Date(start).getTime() - dayStart(iso)) / totalMs * 100));
-          const right = Math.min(100, (new Date(end).getTime() - dayStart(iso)) / totalMs * 100);
-          return { left: `${left}%`, width: `${Math.max(1.5, right - left)}%` };
+        const HOUR_PX = 72;
+        const firstHour = schoolHours[0] ?? 8;
+        const gridHeight = schoolHours.length * HOUR_PX;
+        const dayStart = (iso: string) => new Date(`${iso}T${pad(firstHour)}:00:00`).getTime();
+        const box = (iso: string, start: string, end: string) => {
+          const topPx = (new Date(start).getTime() - dayStart(iso)) / 3_600_000 * HOUR_PX;
+          const bottomPx = (new Date(end).getTime() - dayStart(iso)) / 3_600_000 * HOUR_PX;
+          const top = Math.max(0, Math.min(gridHeight, topPx));
+          const height = Math.max(20, Math.min(gridHeight, bottomPx) - top);
+          return { top, height };
         };
         const gapsFor = (appts: Appointment[]) => {
           const sorted = [...appts].sort((a, b) => a.start.localeCompare(b.start));
@@ -258,11 +268,24 @@ function ScheduleView() {
             return [{ start: a.end, end: next.start, minutes, label: lunch ? "Lunchpauze" : minutes >= 45 ? "Pauze" : "Tussenuur" }];
           });
         };
+        const lanesFor = (appts: Appointment[]) => {
+          const sorted = [...appts].sort((a, b) => a.start.localeCompare(b.start));
+          const ends: number[] = [];
+          const lanes: Record<string, number> = {};
+          sorted.forEach((a) => {
+            const start = new Date(a.start).getTime();
+            let lane = ends.findIndex((end) => end <= start);
+            if (lane < 0) { lane = ends.length; ends.push(0); }
+            ends[lane] = new Date(a.end).getTime();
+            lanes[a.id] = lane;
+          });
+          return { lanes, count: Math.max(1, ends.length) };
+        };
         return (
           <section className="panel overflow-hidden p-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div><h2 className="text-base font-bold text-slate-900 dark:text-white">Urenraster</h2>
-                <p className="text-[11px] text-slate-400">Gedetecteerde lesuren uit je echte rooster · kolom 1 = {pad(schoolHours[0])}:00 (1e uur)</p></div>
+                <p className="text-[11px] text-slate-400">Dagen bovenaan, uren naar beneden · eerste rij = {pad(firstHour)}:00 (1e uur)</p></div>
               <div className="flex flex-wrap gap-3 text-[10px] text-slate-400">
                 <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-accent" />Les</span>
                 <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-amber-400" />Toets</span>
@@ -271,55 +294,71 @@ function ScheduleView() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <div className="min-w-[980px]">
+              <div className="min-w-[1080px]">
                 <div className="flex border-b border-slate-200 dark:border-white/[0.08]">
-                  <div className="w-20 shrink-0 px-2 pb-2 text-[9px] font-bold uppercase text-slate-400">Dag</div>
-                  <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${schoolHours.length}, minmax(0, 1fr))` }}>
-                    {schoolHours.map((hour, i) => (
-                      <div key={hour} className="border-l border-slate-200 px-1 pb-2 dark:border-white/[0.06]">
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-accent">{i + 1}e uur</p>
-                        <p className="mono text-[10px] text-slate-500 dark:text-white/50">{pad(hour)}:00</p>
+                  <div className="w-16 shrink-0 px-2 pb-2 text-[9px] font-bold uppercase text-slate-400">Tijd</div>
+                  <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${weekDays.length}, minmax(140px, 1fr))` }}>
+                    {weekDays.map((iso) => (
+                      <div key={iso} className="border-l border-slate-200 px-1 pb-2 text-center dark:border-white/[0.06]">
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-accent">{new Date(iso + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short" })}</p>
+                        <p className="mono text-[10px] text-slate-500 dark:text-white/50">{iso.slice(8)}</p>
                       </div>
                     ))}
                   </div>
                 </div>
-                {weekDays.map((iso) => {
-                  const stats = dayStats(iso);
-                  const gaps = gapsFor(stats.appts);
-                  return (
-                    <div key={iso} className="flex border-b border-slate-100 dark:border-white/[0.05]">
-                      <div className="flex w-20 shrink-0 flex-col justify-center px-2 py-2">
-                        <p className="text-[10px] font-bold uppercase text-slate-600 dark:text-white/70">{new Date(iso + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short" })}</p>
-                        <p className="mono text-[10px] text-slate-400">{iso.slice(8)}</p>
+                <div className="flex">
+                  <div className="w-16 shrink-0 border-r border-slate-200 dark:border-white/[0.06]" style={{ height: gridHeight }}>
+                    {schoolHours.map((hour, i) => (
+                      <div key={hour} className="border-b border-slate-100 pr-2 text-right dark:border-white/[0.05]" style={{ height: HOUR_PX }}>
+                        <p className="mono pt-1 text-[10px] font-semibold text-slate-600 dark:text-white/70">{pad(hour)}:00</p>
+                        <p className="text-[8px] uppercase text-slate-400">{i + 1}e</p>
                       </div>
-                      <div className="relative h-[88px] flex-1">
-                        <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${schoolHours.length}, minmax(0, 1fr))` }}>
-                          {schoolHours.map((hour) => <div key={hour} className="border-l border-slate-200/70 dark:border-white/[0.06]" />)}
-                        </div>
-                        {gaps.map((gap) => (
-                          <div key={`${gap.start}-${gap.end}`} style={pos(iso, gap.start, gap.end)}
-                            className="absolute top-1 flex h-[36px] items-center justify-center overflow-hidden rounded-md border border-dashed border-emerald-400/60 bg-emerald-400/[0.08] px-0.5 text-center text-[8px] font-bold text-emerald-500" title={`${gap.label}: ${gap.minutes} minuten`}>
-                            <span className="truncate">{gap.label} · {gap.minutes}m</span>
+                    ))}
+                  </div>
+                  <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${weekDays.length}, minmax(140px, 1fr))` }}>
+                    {weekDays.map((iso) => {
+                      const stats = dayStats(iso);
+                      const gaps = gapsFor(stats.active);
+                      const { lanes, count } = lanesFor(stats.appts);
+                      return (
+                        <div key={iso} className={`relative border-l border-slate-200 dark:border-white/[0.06] ${iso === now.toISOString().slice(0, 10) ? "bg-accent/[0.035]" : ""}`} style={{ height: gridHeight }}>
+                          <div className="absolute inset-0 grid" style={{ gridTemplateRows: `repeat(${schoolHours.length}, ${HOUR_PX}px)` }}>
+                            {schoolHours.map((hour) => <div key={hour} className="border-b border-slate-100 dark:border-white/[0.05]" />)}
                           </div>
-                        ))}
-                        {stats.appts.map((a, i) => {
-                          const subject = data.subjects.find((s) => s.id === a.subjectId);
-                          return (
-                            <motion.div key={a.id} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.02 }}
-                              style={{ ...pos(iso, a.start, a.end), top: i % 2 ? 48 : 6, background: a.cancelled ? "rgba(244,63,94,0.22)" : a.type === "toets" ? "rgba(245,158,11,0.18)" : `${subject?.color ?? "#6366f1"}26`, borderColor: a.cancelled ? "#f43f5e" : a.type === "toets" ? "#f59e0b" : subject?.color ?? "#6366f1" }}
-                              className="absolute h-[38px] overflow-hidden rounded-lg border-l-[3px] px-1.5 py-1">
-                              <p className={`truncate text-[9px] font-bold ${a.cancelled ? "text-rose-400 line-through" : "text-slate-800 dark:text-white/85"}`}>{a.title}</p>
-                              <p className="mono truncate text-[8px] text-slate-500 dark:text-white/45">{timeLabel(a.start)} {a.type === "toets" && "· TOETS"}{a.cancelled && " · UITVAL"}</p>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                          {gaps.map((gap) => {
+                            const { top, height } = box(iso, gap.start, gap.end);
+                            return (
+                              <div key={`${gap.start}-${gap.end}`} style={{ top, height }}
+                                className="absolute left-1 right-1 flex items-center justify-center overflow-hidden rounded-md border border-dashed border-emerald-400/60 bg-emerald-400/[0.08] px-0.5 text-center text-[8px] font-bold text-emerald-500" title={`${gap.label}: ${gap.minutes} minuten`}>
+                                <span className="truncate">{gap.label} · {gap.minutes}m</span>
+                              </div>
+                            );
+                          })}
+                          {stats.appts.map((a) => {
+                            const subject = data.subjects.find((s) => s.id === a.subjectId);
+                            const { top, height } = box(iso, a.start, a.end);
+                            const lane = lanes[a.id] ?? 0;
+                            return (
+                              <motion.div key={a.id} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.02 }}
+                                role="button" tabIndex={0}
+                                aria-label={`${a.title}, ${timeLabel(a.start)} — open details`}
+                                onClick={() => setSelectedAppointment(a)}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedAppointment(a); } }}
+                                style={{ top, height, left: `calc(${lane * 100 / count}% + 3px)`, width: `calc(${100 / count}% - 6px)`, background: a.cancelled ? "rgba(244,63,94,0.22)" : a.type === "toets" ? "rgba(245,158,11,0.18)" : `${subject?.color ?? "#6366f1"}26`, borderColor: a.cancelled ? "#f43f5e" : a.type === "toets" ? "#f59e0b" : subject?.color ?? "#6366f1" }}
+                                className="absolute cursor-pointer overflow-hidden rounded-lg border-l-[3px] px-1.5 py-1 text-left">
+                                <p className={`truncate text-[9px] font-bold ${a.cancelled ? "text-rose-400 line-through" : "text-slate-800 dark:text-white/85"}`}>{a.title}</p>
+                                <p className="mono truncate text-[8px] text-slate-500 dark:text-white/45">{timeLabel(a.start)} {a.type === "toets" && "· TOETS"}{a.cancelled && " · UITVAL"}</p>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
-            <p className="mt-3 text-[10px] text-slate-400">Pauzes en tussenuren worden automatisch afgeleid uit de tijd tussen twee lessen. Overlaprende lessen stapelen in de rastercel.</p>
+            <p className="mt-3 text-[10px] text-slate-400">Pauzes en tussenuren worden automatisch afgeleid uit de tijd tussen twee lessen. Klik op een les voor details en acties.</p>
           </section>
         );
       })()}
@@ -353,19 +392,57 @@ function ScheduleView() {
           {[...filtered].sort((a, b) => a.start.localeCompare(b.start)).filter((a) => new Date(a.end) >= now).slice(0, 40).map((a) => {
             const subject = data.subjects.find((s) => s.id === a.subjectId);
             return (
-              <div key={a.id} className="flex items-center gap-4 p-3.5">
+              <button type="button" key={a.id} onClick={() => setSelectedAppointment(a)} className="flex w-full items-center gap-4 p-3.5 text-left transition hover:bg-slate-50 dark:hover:bg-white/[0.04]">
                 <div className="w-16 shrink-0 text-center"><p className="mono text-sm font-bold text-slate-900 dark:text-white">{a.start.slice(8, 10)}</p><p className="text-[9px] uppercase text-slate-400">{new Date(a.start + "T12:00:00").toLocaleDateString("nl-NL", { month: "short" })}</p></div>
                 <span className="h-9 w-1 rounded-full" style={{ background: subject?.color ?? "#64748b" }} />
                 <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-800 dark:text-white/85">{a.title}</p><p className="text-[10px] text-slate-400">{subject?.name} · {a.location} · {data.teachers.find((t) => t.id === a.teacherId)?.name ?? "—"}</p></div>
                 <span className="mono text-xs text-slate-500 dark:text-white/50">{timeLabel(a.start)}</span>
                 {a.type === "toets" && <span className="flex shrink-0 items-center gap-1 rounded-md bg-rose-500 px-1.5 py-0.5 text-[9px] font-black uppercase text-white"><ClipboardCheck size={10} />{a.toetsType ?? "toets"}</span>}
                 {a.cancelled && <Pill tone="red">uitval</Pill>}
-              </div>
+              </button>
             );
           })}
         </section>
       )}
 
+      <Modal
+        open={Boolean(selectedAppointment)}
+        onClose={() => setSelectedAppointment(null)}
+        title={selectedAppointment?.title ?? "Les"}
+        subtitle={selectedAppointment
+          ? `${shortDate(selectedAppointment.start)} · ${timeLabel(selectedAppointment.start)}–${timeLabel(selectedAppointment.end)} · bron: ${selectedAppointment.source}`
+          : undefined}
+      >
+        {selectedAppointment && (() => {
+          const a = selectedAppointment;
+          const subjectId = a.subjectId;
+          const subject = data.subjects.find((s) => s.id === subjectId);
+          const teacher = data.teachers.find((t) => t.id === a.teacherId)?.name;
+          const group = data.choiceGroups.find((g) => g.id === a.kwtGroupId);
+          return (
+            <div className="space-y-5">
+              <div className="flex flex-wrap gap-2">
+                {a.cancelled && <Pill tone="red">Les uitgevallen</Pill>}
+                {a.type === "toets" && <Pill tone="amber">{a.toetsType ?? "Toets"}</Pill>}
+                {group && <Pill tone="accent">KWT · {group.title}</Pill>}
+                {!a.cancelled && a.type !== "toets" && !group && <Pill tone="green">Normale les</Pill>}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/[0.08]"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Vak</p><div className="mt-1 text-sm font-semibold text-slate-800 dark:text-white/90">{subject ? <SubjectBadge subjectId={subject.id} /> : "Onbekend vak"}</div></div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/[0.08]"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tijd</p><p className="mono mt-1 text-sm font-semibold text-slate-800 dark:text-white/90">{timeLabel(a.start)} – {timeLabel(a.end)}</p></div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/[0.08]"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Lokaal</p><p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white/90"><MapPin size={13} className="text-accent" />{a.location || "Onbekend"}</p>{a.originalLocation && a.originalLocation !== a.location && <p className="mt-1 text-[10px] font-bold text-amber-400">was {a.originalLocation}</p>}</div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/[0.08]"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Docent</p><p className="mt-1 text-sm font-semibold text-slate-800 dark:text-white/90">{teacher ?? a.teacherId ?? "Onbekend"}</p></div>
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-white/[0.08]">
+                <button className="btn-primary" onClick={() => { window.dispatchEvent(new CustomEvent("magisterpro:focus", { detail: { subjectId: a.subjectId } })); toast("Focus gestart", "success", `Je focust op ${subject?.name ?? "dit vak"}.`); setSelectedAppointment(null); }}><Clock3 size={14} /> Focus starten</button>
+                {subjectId && <button className="btn-secondary" onClick={() => { router.push(`/grades?subject=${encodeURIComponent(subjectId)}`); setSelectedAppointment(null); }}>Bekijk vak</button>}
+                {subjectId && <button className="btn-secondary" onClick={() => { addHomework(`${a.title} — voorbereiding`, subjectId, a.start); toast("Studieblok toegevoegd", "success", "Staat nu in je planner."); setSelectedAppointment(null); router.push("/planner"); }}>Maak studieblok</button>}
+                {group && <button className="btn-secondary" onClick={() => { setKwtGroup(group); setSelectedAppointment(null); }}><Sparkles size={14} /> Open keuze</button>}
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
       <KwtModal group={kwtGroup} onClose={() => setKwtGroup(null)} />
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Toets of afspraak toevoegen" subtitle="Verschijnt direct in je rooster en toetsplanner">
         <div className="space-y-4">

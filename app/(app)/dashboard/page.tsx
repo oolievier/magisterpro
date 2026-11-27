@@ -44,8 +44,8 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Algemeen gemiddelde" value={formatGrade(overall)} hint="Gewogen over alle toetsen" icon={GraduationCap} delay={0.02} />
-        <StatCard label="Slaagstatus" value={check.label} hint={`${check.deficitPoints} tekort · ${check.compensationPoints} compensatie`} icon={ShieldCheck}
-          tone={check.status === "op-koers" ? "emerald" : check.status === "aandacht" ? "amber" : "rose"} delay={0.05} />
+        <StatCard label="Slaagstatus" value={check.label} hint={check.hasData ? `${check.deficitPoints} tekort · ${check.compensationPoints} compensatie` : "wacht op echte cijfers"} icon={ShieldCheck}
+          tone={!check.hasData ? "accent" : check.status === "op-koers" ? "emerald" : check.status === "aandacht" ? "amber" : "rose"} delay={0.05} />
         <StatCard label="Studie-XP" value={`${studyMinutes}`} suffix="min" hint={`${Math.floor(studyMinutes / 120) + 1} level · ${new Set(state.focusSessions.map((f) => f.completedAt.slice(0, 10))).size} dagen streak`} icon={Flame} tone="amber" delay={0.08} />
         <StatCard label="Eerstvolgende les" value={appointments.find((a) => new Date(a.start) > now) ? timeLabel(appointments.find((a) => new Date(a.start) > now)!.start) : "—"} hint={`${appointments.filter((a) => a.start.slice(0, 10) === now.toISOString().slice(0, 10)).length} lessen vandaag`} icon={CalendarRange} tone="blue" delay={0.11} />
       </div>

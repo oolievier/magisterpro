@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useApp, ACCENTS } from "@/app/providers";
 import { normalizeMagisterHost } from "@/lib/api/magister";
+import { openMagister } from "@/lib/extension";
 import { exchangeZermeloCode } from "@/lib/api/zermelo";
 import { toast } from "@/components/ui/Toaster";
 import { Pill } from "@/components/ui/Primitives";
@@ -144,16 +145,13 @@ export default function SettingsPage() {
               placeholder="schoolnaam.magister.net"
               autoComplete="organization"
             />
-            {c.magisterSchool && (
-              <a
-                className="btn-secondary justify-center"
-                href={`https://${c.magisterSchool}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open schoolportaal <ExternalLink size={13} />
-              </a>
-            )}
+            <button
+              className="btn-secondary justify-center"
+              onClick={() => openMagister(c.magisterSchool)}
+              title="Met één klik wisselen tussen MagisterPro en Magister"
+            >
+              Wissel naar Magister <ExternalLink size={13} />
+            </button>
           </div>
           <p className="mt-1.5 text-[11px] text-slate-500 dark:text-white/45">
             Wordt meestal automatisch herkend. Klopt de school niet? Vul hem hier in; er wordt geen wachtwoord gevraagd.

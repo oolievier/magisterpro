@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { normalizeMagisterHost } from "@/lib/api/magister";
+import { openMagister } from "@/lib/extension";
 import { exchangeZermeloCode, normalizeZermeloSubdomain } from "@/lib/api/zermelo";
 import {
   buildMagisterAuthorizeUrl, getNativeBridge, MAGISTER_CLIENT_ID,
@@ -464,14 +465,12 @@ export default function LoginPage() {
                         ? "MagisterPro-extensie actief. Log normaal in op de echte Magister-site; je sessie wordt automatisch overgenomen — ook met MFA."
                         : "Met de MagisterPro-browserextensie log je gewoon in op Magister en neemt MagisterPro je sessie over, zonder QR-code of extra app."}
                     </span>
-                    <a
-                      href="https://accounts.magister.net/"
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      onClick={() => openMagister(state.connection.magisterSchool)}
                       className="mt-1.5 inline-flex items-center gap-1.5 font-semibold text-indigo-300 hover:text-indigo-200"
                     >
-                      Open Magister <ExternalLink size={11} />
-                    </a>
+                      Wissel naar Magister <ExternalLink size={11} />
+                    </button>
                   </div>
                 </div>
 

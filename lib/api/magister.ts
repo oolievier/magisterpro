@@ -143,6 +143,11 @@ export const magister = {
     return request<T>(config, `api/personen/${personId}/studiewijzers`);
   },
 
+  /** Best-effort detail-call voor scholen die bijlagen niet meesturen in de lijst. */
+  getStudyGuideAttachments<T = unknown[]>(config: MagisterConfig, personId: number | string, guideId: number | string) {
+    return request<T>(config, `api/personen/${personId}/studiewijzers/${guideId}/bijlagen`);
+  },
+
   getAssignments<T = unknown[]>(config: MagisterConfig, personId: number | string) {
     return request<T>(config, `api/personen/${personId}/opdrachten`);
   },
@@ -201,19 +206,26 @@ export const magister = {
   },
 };
 
-/** Downloadt een echte Magister-bijlage met de sessieheaders van de proxy. */
-export async function downloadMagisterFile(config: MagisterConfig, apiPath: string, filename: string): Promise<void> {
-  const clean = apiPath.replace(/^\/+/, "");
-  if (!/^api\//.test(clean)) throw new Error("Geen geldige Magister-link voor deze bijlage.");
-  const res = await fetch(`/api/magister/${clean}`, {
+/** Haalt een echte Magister-bijlage op via de proxy, met de sessieheaders. */
+async function fetchMagisterFile(config: MagisterConfig, apiPath: string): Promise<Blob> {
+  const raw = apiPath.replace(/^\/+/, "");
+  const clean = raw.startsWith("api/") ? raw.slice(4) : raw;
+  if (!clean || !/^(personen|oauth2)\//.test(clean)) throw new Error("Geen geldige Magister-link voor deze bijlage.");
+  const res = await fetch(`/api/magister/api/${clean}`, {
     headers: {
       "x-magister-subdomain": normalizeMagisterHost(config.subdomain),
       "x-magister-token": config.token,
+      Accept: "*/*",
     },
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Magister gaf status ${res.status} bij het downloaden.`);
-  const blob = await res.blob();
+  if (!res.ok) throw new Error(`Magister gaf status ${res.status} bij het openen van de bijlage.`);
+  return res.blob();
+}
+
+/** Downloadt een echte Magister-bijlage. */
+export async function downloadMagisterFile(config: MagisterConfig, apiPath: string, filename: string): Promise<void> {
+  const blob = await fetchMagisterFile(config, apiPath);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -221,7 +233,25 @@ export async function downloadMagisterFile(config: MagisterConfig, apiPath: stri
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Opent een echte Magister-bijlage in een nieuw tabblad (met download-fallback). */
+export async function openMagisterFile(config: MagisterConfig, apiPath: string, filename: string): Promise<void> {
+  const blob = await fetchMagisterFile(config, apiPath);
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (opened) {
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /* ---------------------------------------------------------------------------

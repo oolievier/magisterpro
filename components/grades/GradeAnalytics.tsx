@@ -18,7 +18,11 @@ export function GradeAnalytics() {
   const trend = useMemo(() => monthlyTrend(data.grades, data.subjects), [data.grades, data.subjects]);
   const profiles = useMemo(() => profileAverages(data.grades, data.subjects), [data.grades, data.subjects]);
   const records = useMemo(() => gradeRecords(data.grades, data.subjects), [data.grades, data.subjects]);
-  const bars = useMemo(() => data.subjects.map((s) => ({ name: s.short, value: Number(subjectStats(s.id, data.grades).average.toFixed(2)), color: s.color })).sort((a, b) => b.value - a.value), [data.subjects, data.grades]);
+  const bars = useMemo(() => data.subjects
+    .map((s) => ({ subject: s, stats: subjectStats(s.id, data.grades) }))
+    .filter(({ stats }) => stats.count > 0 && Number.isFinite(stats.average))
+    .map(({ subject: s, stats }) => ({ name: s.short, value: Number(stats.average.toFixed(2)), color: s.color }))
+    .sort((a, b) => b.value - a.value), [data.subjects, data.grades]);
 
   return (
     <section className="space-y-5">

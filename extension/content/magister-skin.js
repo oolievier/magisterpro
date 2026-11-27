@@ -42,6 +42,7 @@
   var links = document.createElement("div");
   links.className = "mp-links";
   [
+    ["Terug naar MagisterPro", "/dashboard"],
     ["Command Center", "/"],
     ["Cijferstudio", "/grades"],
     ["Rooster", "/schedule"],

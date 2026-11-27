@@ -6,10 +6,10 @@ Een "Student Operating System" voor Nederlandse middelbare scholieren: een moder
 
 - **Command Center** — live-lestracker, actie-radar en cijfer-impactfeed.
 - **Cijferstudio Pro** — vakkaarten, "wat moet ik halen?", multi-vak sandbox, slaag/zak-check volgens de officiële regels, analytics en een cijfer-recordboek.
-- **Super-Rooster** — dag-/week-/maand-/agendaweergave, Zermelo Hub, KWT-inschrijving met capaciteit en conflictdetectie, tussenuur-optimizer en `.ics`-export.
+- **Super-Rooster** — urenraster met dagen bovenaan en uren naar beneden, klikbare lessen met details/acties, dag-/week-/maand-/agendaweergave, Zermelo Hub, KWT-inschrijving met capaciteit en conflictdetectie, tussenuur-optimizer en `.ics`-export.
 - **PTA & Examenkluis** — voortgang per PTA-kolom, schoolexamen-gemiddelde en een herkansings-adviseur gesorteerd op rendement.
 - **Toets- & Huiswerkplanner** — Kanban met drag-and-drop, automatisch terugrekenend leerplan, tijdblokkades en een Pomodoro/XP-focusdock met omgevingsgeluid.
-- **Studiewijzer & ELO** — studiewijzers, inleveropdrachten en markdown-notities per vak.
+- **Studiewijzer & ELO** — studiewijzers, inleveropdrachten en markdown-notities per vak; echte leermiddelen openen via de schoolproxy of wisselen naar het portaal.
 - **Berichten & gids** — inbox, berichten verzenden en een automatisch opgebouwde docenten-/lokalen-gids.
 - **Aanwezigheid & Wrapped** — verzuimanalyse, aanwezigheidsring en een schooljaaroverzicht.
 
@@ -55,7 +55,8 @@ Directe download: [`extension.zip`](https://github.com/oolievier/magisterpro/raw
 
 - De content scripts op `accounts.magister.net` en de schoolportals lezen de `oidc.user:…`-sessie die de officiële Magister-site zelf in `sessionStorage` schrijft. Er wordt geen wachtwoord verstuurd of door MagisterPro opgeslagen.
 - De service worker bewaart de laatste echte sessie in `chrome.storage.local` en geeft die aan open MagisterPro-tabbladen door via het `magisterpro:extension-session`-event.
-- Op Magister-pagina's verschijnt een klein paneel met snelkoppelingen naar Command Center, Cijferstudio, Rooster, Planner en Instellingen, plus een subtiele donker/glas-skin die je aan en uit kunt zetten.
+- Op Magister-pagina's verschijnt een klein paneel met **Terug naar MagisterPro** en snelkoppelingen naar Command Center, Cijferstudio, Rooster, Planner en Instellingen, plus een subtiele donker/glas-skin die je aan en uit kunt zetten.
+- In MagisterPro staat de knop **Wissel naar Magister** in de topbalk, op `/login` en in Instellingen. Met de extensie focus je een bestaande Magister-tab of opent hij er een; zonder extensie valt hij terug op `accounts.magister.net`. Zonder tokenoverdracht blijft de echte login op de Magister-pagina.
 - `app/providers.tsx` neemt de sessie automatisch over. Je hoeft op `/login` niets in te vullen; daarna laden alle modules live data.
 - Extensiesessies worden niet via de algemene tokenendpoint vernieuwd: een accountcenter-`refresh_token` gaf `invalid_grant`. Bij verloping vraagt de app je de echte Magister-pagina te verversen. Instellingen bevat ook een schoolveld als de school niet automatisch herkend wordt.
 

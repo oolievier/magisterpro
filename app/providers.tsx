@@ -343,6 +343,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       });
       setLiveData(result.data);
       setLastSync(new Date());
+      if (hasMagister && result.counts.grades === 0) {
+        toast("Geen cijfers ontvangen", "warning", "Magister gaf geen cijfers terug. Ververs met de extensie actief, of controleer je schoolkoppeling bij Instellingen.");
+      }
       setState((s) => ({
         ...s,
         connection: {

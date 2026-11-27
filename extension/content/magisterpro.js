@@ -32,6 +32,20 @@
   // tussen de geïsoleerde content-script-world en de pagina; window-globals niet.
   window.addEventListener("magisterpro:request-extension-session", requestSession);
 
+  // De webapp kan met één klik naar de echte Magister-site wisselen.
+  window.addEventListener("magisterpro:open-magister", function (event) {
+    var detail = event.detail || {};
+    chrome.runtime.sendMessage(
+      { type: "MAGISTERPRO_OPEN_MAGISTER", school: detail.school || "" },
+      function (result) {
+        void chrome.runtime.lastError;
+        window.dispatchEvent(new CustomEvent("magisterpro:open-magister-result", {
+          detail: result || { ok: false }
+        }));
+      }
+    );
+  });
+
   chrome.runtime.onMessage.addListener(function (message) {
     if (message && message.type === "MAGISTERPRO_SESSION") publish(message.payload);
   });

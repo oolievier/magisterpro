@@ -47,13 +47,27 @@ async function proxy(request: NextRequest, segments: string[]) {
 
   try {
     const res = await fetch(upstream, init);
-    const text = await res.text();
-    let payload: unknown = text;
-    try { payload = text ? JSON.parse(text) : null; } catch { /* tekst doorgeven */ }
-    return NextResponse.json(payload, {
-      status: res.status,
-      headers: { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+    const contentType = res.headers.get("content-type") || "";
+    const buffer = await res.arrayBuffer();
+    const headers = new Headers({
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*",
     });
+
+    // JSON/tekst blijft beschikbaar voor de gewone API-calls. Bijlagen (PDF,
+    // image, zip, ...) moeten als binaire body met hun echte MIME-type terug,
+    // anders maakt NextResponse.json() er een kapotte JSON-tekst van.
+    if (/json|text\/|xml/i.test(contentType)) {
+      const text = new TextDecoder().decode(buffer);
+      let payload: unknown = text;
+      try { payload = text ? JSON.parse(text) : null; } catch { /* tekst doorgeven */ }
+      return NextResponse.json(payload, { status: res.status, headers });
+    }
+
+    if (contentType) headers.set("Content-Type", contentType);
+    const disposition = res.headers.get("content-disposition");
+    if (disposition) headers.set("Content-Disposition", disposition);
+    return new NextResponse(buffer, { status: res.status, headers });
   } catch (error) {
     return NextResponse.json(
       { message: "Kon Magister niet bereiken. Controleer de schoolhost en je verbinding." },

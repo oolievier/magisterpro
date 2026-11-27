@@ -12,29 +12,31 @@ import Link from "next/link";
 export function ExamChecker() {
   const { data, state } = useApp();
   const check = useMemo(() => examCheck(data.subjects, data.grades, state.connection.level), [data.subjects, data.grades, state.connection.level]);
-  const tone = check.status === "op-koers" ? "emerald" : check.status === "aandacht" ? "amber" : "rose";
+  const noData = !check.hasData;
+  const tone = noData ? "slate" : check.status === "op-koers" ? "emerald" : check.status === "aandacht" ? "amber" : "rose";
 
   return (
     <section className="space-y-4">
       <div className={`relative overflow-hidden rounded-2xl border p-6 ${
+        noData ? "border-slate-200 bg-slate-500/[0.04] dark:border-white/[0.08]" :
         check.status === "op-koers" ? "border-emerald-400/25 bg-emerald-400/[0.06]" :
         check.status === "aandacht" ? "border-amber-400/25 bg-amber-400/[0.06]" : "border-rose-400/25 bg-rose-400/[0.06]"
       }`}>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <span className={`rounded-2xl p-3 ${check.status === "op-koers" ? "bg-emerald-400/15 text-emerald-400" : check.status === "aandacht" ? "bg-amber-400/15 text-amber-400" : "bg-rose-400/15 text-rose-400"}`}>
-              {check.status === "gevaar" ? <AlertOctagon size={26} /> : <ShieldCheck size={26} />}
+            <span className={`rounded-2xl p-3 ${noData ? "bg-slate-500/10 text-slate-400" : check.status === "op-koers" ? "bg-emerald-400/15 text-emerald-400" : check.status === "aandacht" ? "bg-amber-400/15 text-amber-400" : "bg-rose-400/15 text-rose-400"}`}>
+              {noData ? <Info size={26} /> : check.status === "gevaar" ? <AlertOctagon size={26} /> : <ShieldCheck size={26} />}
             </span>
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Officiële slaag/zak-check · {state.connection.level.toUpperCase()}</p>
-              <h2 className={`mt-1 text-2xl font-bold tracking-tight ${check.status === "op-koers" ? "text-emerald-500" : check.status === "aandacht" ? "text-amber-500" : "text-rose-400"}`}>{check.label}</h2>
+              <h2 className={`mt-1 text-2xl font-bold tracking-tight ${noData ? "text-slate-500" : check.status === "op-koers" ? "text-emerald-500" : check.status === "aandacht" ? "text-amber-500" : "text-rose-400"}`}>{check.label}</h2>
               <p className="mt-1 max-w-xl text-xs text-slate-500 dark:text-white/50">{check.summary}</p>
             </div>
           </div>
           <div className="flex gap-5">
             <div className="text-center"><p className="mono text-2xl font-bold text-slate-900 dark:text-white">{formatGrade(check.averageRounded)}</p><p className="text-[10px] text-slate-400">gem. eindcijfer</p></div>
-            <div className="text-center"><p className="mono text-2xl font-bold text-rose-400">{check.deficitPoints}</p><p className="text-[10px] text-slate-400">tekortpunten</p></div>
-            <div className="text-center"><p className="mono text-2xl font-bold text-emerald-400">{check.compensationPoints}</p><p className="text-[10px] text-slate-400">compensatie</p></div>
+            <div className="text-center"><p className="mono text-2xl font-bold text-rose-400">{noData ? "—" : check.deficitPoints}</p><p className="text-[10px] text-slate-400">tekortpunten</p></div>
+            <div className="text-center"><p className="mono text-2xl font-bold text-emerald-400">{noData ? "—" : check.compensationPoints}</p><p className="text-[10px] text-slate-400">compensatie</p></div>
           </div>
         </div>
       </div>
@@ -59,15 +61,15 @@ export function ExamChecker() {
             })}
           </div>
           {check.coreIssues.length > 0 && <div className="mt-3 rounded-lg bg-rose-500/10 p-2.5 text-[11px] text-rose-400">{check.coreIssues.join(" ")}</div>}
-          <Pill tone={check.coreOk ? "green" : "red"} >{check.coreOk ? "Regeling voldaan" : "Regeling geschonden"}</Pill>
+          <Pill tone={noData ? "accent" : check.coreOk ? "green" : "red"} >{noData ? "Nog geen cijfers" : check.coreOk ? "Regeling voldaan" : "Regeling geschonden"}</Pill>
         </div>
 
         <div className="panel p-5">
           <p className="mb-4 flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-white/80"><Scale size={15} className="text-accent" /> Tekorten & compensatie</p>
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex-1 rounded-xl bg-rose-500/10 p-3 text-center"><p className="mono text-xl font-bold text-rose-400">{check.deficitPoints}</p><p className="text-[10px] text-rose-400/70">tekort</p></div>
+            <div className="flex-1 rounded-xl bg-rose-500/10 p-3 text-center"><p className="mono text-xl font-bold text-rose-400">{noData ? "—" : check.deficitPoints}</p><p className="text-[10px] text-rose-400/70">tekort</p></div>
             <span className="text-slate-300">vs</span>
-            <div className="flex-1 rounded-xl bg-emerald-500/10 p-3 text-center"><p className="mono text-xl font-bold text-emerald-400">{check.compensationPoints}</p><p className="text-[10px] text-emerald-400/70">compensatie</p></div>
+            <div className="flex-1 rounded-xl bg-emerald-500/10 p-3 text-center"><p className="mono text-xl font-bold text-emerald-400">{noData ? "—" : check.compensationPoints}</p><p className="text-[10px] text-emerald-400/70">compensatie</p></div>
           </div>
           <div className="space-y-2">
             <ProgressBar value={Math.min(100, (check.compensationPoints / Math.max(1, check.deficitPoints)) * 100)} color={check.balanceOk ? "#10b981" : "#f43f5e"} label="Balans" />
@@ -93,9 +95,9 @@ export function ExamChecker() {
           <div className="mb-4 flex items-center gap-2 rounded-xl border border-slate-200 p-3 dark:border-white/[0.08]">
             <Sigma size={16} className="text-accent" />
             <div className="flex-1"><p className="text-[11px] text-slate-500 dark:text-white/45">Gemiddelde afgeronde eindcijfers</p><p className="mono text-sm font-bold text-slate-800 dark:text-white">{formatGrade(check.averageRounded)} / 6,0</p></div>
-            <Pill tone={check.averageOk ? "green" : "red"}>{check.averageOk ? "voldaan" : "tekort"}</Pill>
+            <Pill tone={noData ? "accent" : check.averageOk ? "green" : "red"}>{noData ? "geen data" : check.averageOk ? "voldaan" : "tekort"}</Pill>
           </div>
-          {check.tips.length === 0 ? <p className="py-4 text-center text-xs text-slate-400">Geen directe aandachtspunten. Ga zo door!</p> : (
+          {noData ? <p className="py-4 text-center text-xs text-slate-400">Er zijn nog geen echte cijfers om tips uit af te leiden.</p> : check.tips.length === 0 ? <p className="py-4 text-center text-xs text-slate-400">Geen directe aandachtspunten. Ga zo door!</p> : (
             <div className="space-y-2">
               {check.tips.map((tip, i) => {
                 const s = data.subjects.find((x) => x.id === tip.subjectId)!;

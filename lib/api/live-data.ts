@@ -168,27 +168,51 @@ function codeFor(name: string): string {
 
 /** Vertaalt een Magister-link (Uri of Links[].Uri) naar een proxybaar API-pad. */
 function apiLinkFor(value: unknown, host: string): string {
-  const links = list(value);
-  const relation = links.find((l) => /contents/i.test(str(pick(l, "Rel", "rel"))))
-    ?? links.find((l) => /self/i.test(str(pick(l, "Rel", "rel"))));
-  const raw = str(pick(relation ?? {}, "Uri", "uri", "Url", "url", "Href", "href")) || str(value);
-  if (!raw || !raw.startsWith("/") && !/^https?:\/\//i.test(raw)) return "";
-  try {
-    const url = new URL(raw, `https://${host}`);
-    if (url.hostname !== host) return "";
-    return `${url.pathname}${url.search}`;
-  } catch {
-    return raw.startsWith("/api/") ? raw : "";
+  if (!host) return "";
+  const rawLinks = Array.isArray(value)
+    ? value as Row[]
+    : value && typeof value === "object" ? [value as Row] : [];
+  const links = [...list(value), ...rawLinks];
+  const rank = (link: Row) => {
+    const rel = str(pick(link, "Rel", "rel")).toLowerCase();
+    return rel.includes("contents") ? 2 : rel.includes("self") ? 1 : 0;
+  };
+  links.sort((a, b) => rank(b) - rank(a));
+
+  const candidates: string[] = [];
+  for (const link of links) {
+    const uri = str(pick(link, "Uri", "uri", "Url", "url", "Href", "href", "Link"));
+    if (uri && !candidates.includes(uri)) candidates.push(uri);
   }
+  const direct = str(value);
+  if (direct && !candidates.includes(direct)) candidates.push(direct);
+
+  for (const raw of candidates) {
+    if (!raw || (!raw.startsWith("/") && !/^https?:\/\//i.test(raw))) continue;
+    try {
+      const url = new URL(raw, `https://${host}`);
+      const marker = url.pathname.indexOf("/api/");
+      if (marker >= 0) return `${url.pathname.slice(marker + 1)}${url.search}`;
+      // Een portaal-pad op dezelfde host kan via de browser worden geopend,
+      // maar is niet proxybaar; dan volgt de portal-fallback in de UI.
+    } catch {
+      if (raw.startsWith("/api/")) return raw.replace(/^\/+/, "");
+    }
+  }
+  return "";
 }
 
 function attachmentFor(value: unknown, index: number, host: string): StudyGuideAttachment {
   const row = (value ?? {}) as Row;
+  const url = apiLinkFor(pick(row, "Links", "links"), host)
+    || apiLinkFor(row, host)
+    || apiLinkFor(pick(row, "Uri", "uri", "Url", "url", "Href", "href"), host);
   return {
     id: str(pick(row, "Id", "id")) || `att-${index}`,
     name: str(pick(row, "Naam", "naam", "weergavenaam", "DisplayName"))
-      || (apiLinkFor(pick(row, "Links"), host).split("/").pop() ?? "Bijlage"),
-    url: apiLinkFor(pick(row, "Links"), host) || apiLinkFor(pick(row, "Uri", "uri", "Url", "url"), host),
+      || url.split("/").filter(Boolean).pop()
+      || "Bijlage",
+    url,
     mime: str(pick(row, "ContentType", "contentType")) || undefined,
   };
 }
@@ -378,12 +402,22 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   }
 
   /* ---- cijfers: alléén echte, numerieke cijfers ---- */
-  const gradeValue = (g: Row): number => num(
-    pick(g, "waarde", "Cijfer", "grade"),
-    num(pick(g, "CijferStr"), NaN)
-  );
+  // Magister-clients verschillen in veldnamen: CijferStr bevat vaak het echte
+  // rapportcijfer ("7,5"), terwijl waarde/Cijfer soms leeg zijn (en andersom).
+  const gradeValue = (g: Row): number => {
+    for (const candidate of [
+      pick(g, "CijferStr", "cijferStr"),
+      pick(g, "waarde", "Waarde", "Cijfer", "cijfer", "grade", "Grade"),
+      pick(g, "CijferNumeriek", "cijferNumeriek"),
+    ]) {
+      const value = num(candidate, NaN);
+      if (Number.isFinite(value)) return value;
+    }
+    return NaN;
+  };
   const numericGrades = rawGrades.filter((g) => {
-    if (pick(g, "TeltMee") === false || pick(g, "Vrijstelling") === true || pick(g, "VakDispensatie") === true) return false;
+    if (pick(g, "TeltMee", "teltMee") === false) return false;
+    if ([pick(g, "Vrijstelling", "vrijstelling"), pick(g, "VakDispensatie", "vakDispensatie"), pick(g, "HeeftVrijstelling", "heeftVrijstelling")].includes(true)) return false;
     if (num(pick(g, "CijferId", "cijferId"), 1) === 0) return false;
     const value = gradeValue(g);
     return Number.isFinite(value) && value > 0 && value <= 10;
@@ -392,25 +426,25 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
   const grades: Grade[] = numericGrades.map((g, index) => {
     const kolom = (pick(g, "kolom", "CijferKolom") ?? {}) as Row;
     const vak = (pick(g, "Vak", "vak") ?? {}) as Row;
-    const rawName = pick(vak, "Omschrijving", "omschrijving", "Naam", "naam")
-      ?? pick(g, "vaknaam", "VakNaam")
-      ?? pick(vak, "afkorting", "Afkorting");
-    const subjectId = subjectFor(rawName ?? pick(g, "vak", "Vak"));
+    const rawName = str(pick(vak, "Omschrijving", "omschrijving", "Naam", "naam", "Code", "code", "Afkorting", "afkorting"))
+      || str(pick(g, "vaknaam", "VakNaam", "VakCode", "vakCode"))
+      || str(pick(g, "vak", "Vak"));
+    const subjectId = subjectFor(rawName);
     const columnLabel = plain(pick(kolom, "KolomOmschrijving", "omschrijving", "naam", "Naam"));
     const label = columnLabel || plain(pick(g, "omschrijving", "Omschrijving")) || "Cijfer";
     const typeText = `${str(pick(kolom, "type", "Type"))} ${label}`.toLowerCase();
-    const isPta = /pta|schoolexamen|examen/.test(typeText) || kolom.IsPTAKolom === true;
+    const isPta = /pta|schoolexamen|examen/.test(typeText) || kolom.IsPTAKolom === true || kolom.isPTAKolom === true;
     const type: Grade["type"] = /herkans|rep\b/.test(typeText) ? "REP"
       : /opdracht|assignment/.test(typeText) ? "Opdracht"
       : isPta ? "PTA" : "SO";
     const columnId = pick(kolom, "Id", "id", "code", "Code", "KolomCode");
     const columnCode = str(pick(kolom, "code", "Code", "KolomCode")) || (columnId ? `KOL-${columnId}` : `KOL-${index + 1}`);
-    const date = toISO(pick(g, "DatumIngevoerd", "datum", "Datum", "date"));
+    const date = toISO(pick(g, "DatumIngevoerd", "datumIngevoerd", "ingevoerdOp", "behaaldOp", "datum", "Datum", "date"));
     const teacherCode = str(pick(g, "Docent", "docent"));
     return {
       id: `cijfer-${pick(g, "CijferId", "id", "Id") ?? index + 1}-${index}`,
       subjectId, value: gradeValue(g),
-      weight: num(pick(kolom, "weegfactor", "weging", "Weging"), 1) || 1,
+      weight: num(pick(kolom, "weegfactor", "weegFactor", "WegFactor", "weging", "Weging"), 1) || 1,
       date, label, type, columnCode,
       teacherId: teacherCode ? teacherFor(teacherCode, true) : undefined,
       ptaColumnId: isPta ? columnCode : undefined,
@@ -669,15 +703,30 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     };
   }).filter((e) => e.subjectId);
 
+  // Sommige scholen sturen bijlagen niet mee in de studiewijzer-lijst; probeer
+  // dan het echte detail-endpoint. Fouten worden genegeerd (best-effort).
+  const guideAttachmentResults = await Promise.allSettled(rawGuides.map((g) => {
+    const guideId = pick(g, "Id", "id");
+    if (!personId || !guideId || list(pick(g, "Bijlagen", "bijlagen")).length) return Promise.resolve(null);
+    return magister.getStudyGuideAttachments(config, personId, guideId);
+  }));
+
   const studyGuides: StudyGuide[] = rawGuides.map((g, index) => {
     const subjectName = str(pick(g, "vak", "Vak", "vaknaam", "VakNaam"));
+    const embedded = list(pick(g, "Bijlagen", "bijlagen"));
+    const detailResult = guideAttachmentResults[index];
+    const detailRows = detailResult?.status === "fulfilled" && detailResult.value && detailResult.value.ok
+      ? list(detailResult.value.data) : [];
+    const rows = [...embedded, ...detailRows].filter((row, i, all) =>
+      all.findIndex((other) => str(pick(other, "Id", "id")) === str(pick(row, "Id", "id"))) === i
+    );
     return {
       id: `sg-${pick(g, "Id", "id") ?? index}`,
       subjectId: subjectFor(subjectName),
       title: plain(pick(g, "Omschrijving", "omschrijving", "Titel", "titel")) || "Studiewijzer",
       week: num(pick(g, "Week", "week"), 1),
       goals: list(pick(g, "Leerdoelen", "leerdoelen")).map((d) => plain(pick(d, "Omschrijving", "omschrijving")) || str(d)).filter(Boolean),
-      attachments: list(pick(g, "Bijlagen", "bijlagen")).map((row, i) => attachmentFor(row, i, host)),
+      attachments: rows.map((row, i) => attachmentFor(row, i, host)),
       updatedAt: toISO(pick(g, "LaatstGewijzigd", "lastModified")),
     };
   }).filter((s) => s.subjectId);

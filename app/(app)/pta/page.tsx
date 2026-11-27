@@ -59,7 +59,7 @@ export default function PtaPage() {
         <StatCard label="SE voortgang" value={Math.round(overallProgress)} suffix="%" hint={`${data.ptaColumns.filter((c) => c.gradeId).length} van ${data.ptaColumns.length} onderdelen`} icon={ClipboardCheck} />
         <StatCard label="Vaststaand gewicht" value={lockedWeight} suffix="×" hint="niet-herkansbaar behaald" icon={LockKeyhole} tone="blue" />
         <StatCard label="Herkansingen" value={data.ptaColumns.filter((c) => c.retakeable && c.gradeId && (data.grades.find((g) => g.id === c.gradeId)?.value ?? 6) < 6).length} hint="onderdelen onder een 6" icon={RotateCcw} tone="amber" />
-        <StatCard label="Slaagstatus" value={check.label} hint={`${check.compensationPoints} compensatiepunten`} icon={Award} tone={check.status === "op-koers" ? "emerald" : check.status === "gevaar" ? "rose" : "amber"} />
+        <StatCard label="Slaagstatus" value={check.label} hint={check.hasData ? `${check.compensationPoints} compensatiepunten` : "wacht op echte cijfers"} icon={Award} tone={!check.hasData ? "accent" : check.status === "op-koers" ? "emerald" : check.status === "gevaar" ? "rose" : "amber"} />
       </div>
 
       <section>

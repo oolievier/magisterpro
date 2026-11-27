@@ -300,6 +300,8 @@ export interface AppData {
   /** Cijfers die eerst handmatig aan een vak/waarde gekoppeld moeten worden. */
   gradeCandidates: Grade[];
   gradeDiagnostics: { raw: number; accepted: number; review: number; dropped: number; errors: string[] };
+  /** Ruwe cijferrijen voor diagnose-export; bevat geen token of wachtwoord. */
+  rawGradeRows: Record<string, unknown>[];
   ptaColumns: PtaColumn[];
   appointments: Appointment[];
   choiceGroups: ChoiceGroup[];

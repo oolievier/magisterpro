@@ -380,6 +380,7 @@ export function emptyAppData(): AppData {
   return {
     subjects: [], teachers: [], grades: [], gradeCandidates: [],
     gradeDiagnostics: { raw: 0, accepted: 0, review: 0, dropped: 0, errors: [] },
+    rawGradeRows: [],
     ptaColumns: [], appointments: [],
     choiceGroups: [], homework: [], studyGuides: [], eloAssignments: [],
     messages: [], absences: [], stats,
@@ -1044,7 +1045,7 @@ export async function fetchLiveData(connection: LiveConnection): Promise<LiveDat
     },
     data: {
       subjects: [...subjectMap.values()], teachers: [...teacherMap.values()],
-      grades, gradeCandidates, gradeDiagnostics, ptaColumns, appointments,
+      grades, gradeCandidates, gradeDiagnostics, rawGradeRows: rawGrades, ptaColumns, appointments,
       choiceGroups, homework, studyGuides, eloAssignments, messages, absences,
       stats: {
         lessonsAttended: appointments.filter((a) => !a.cancelled && a.type === "les").length,

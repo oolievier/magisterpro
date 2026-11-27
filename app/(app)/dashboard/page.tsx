@@ -57,7 +57,7 @@ export default function DashboardPage() {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="panel flex flex-col gap-4 border-accent/20 bg-accent/[0.04] p-5 sm:flex-row sm:items-center">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent"><Coffee size={20} /></span>
           <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-2"><p className="text-xs font-bold uppercase tracking-wider text-accent">Tussenuur-optimizer</p><Pill tone="accent">{gaps[0].minutes} min vrij</Pill></div>
+            <div className="mb-1 flex items-center gap-2"><p className="text-xs font-bold uppercase tracking-wider text-accent">{gaps[0].minutes >= 45 ? "Tussenuur-optimizer" : "Pauze-optimizer"}</p><Pill tone="accent">{gaps[0].minutes} min {gaps[0].minutes >= 45 ? "vrij" : "pauze"}</Pill></div>
             <p className="text-sm font-semibold text-slate-900 dark:text-white">{suggestion.title}</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-white/50">{suggestion.reason}</p>
           </div>

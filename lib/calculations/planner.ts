@@ -33,7 +33,7 @@ const timeLabel = (iso: string) =>
   new Date(iso).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
 
 /** Detecteert tussenuren vanaf `minMinutes` minuten op een gegeven dag. */
-export function findFreeGaps(dayAppointments: Appointment[], minMinutes = 45): TimeGap[] {
+export function findFreeGaps(dayAppointments: Appointment[], minMinutes = 15): TimeGap[] {
   const lessons = dayAppointments
     .filter((a) => !a.cancelled && a.type !== "vrij")
     .sort((a, b) => a.start.localeCompare(b.start));

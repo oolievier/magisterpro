@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, EyeOff, RotateCcw, ScanSearch, TriangleAlert } from "lucide-react";
+import { Check, Download, EyeOff, RotateCcw, ScanSearch, TriangleAlert } from "lucide-react";
 import { useApp } from "@/app/providers";
 import { Pill } from "@/components/ui/Primitives";
 import { toast } from "@/components/ui/Toaster";
@@ -27,6 +27,25 @@ export function GradeDetectionPanel() {
     return value ? String(value).replace(".", ",") : g.rawValue ?? "";
   };
 
+  const downloadDiagnostics = () => {
+    const blob = new Blob([JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      diagnostics: data.gradeDiagnostics,
+      mapped: rows.map((g) => ({
+        id: g.id, date: g.date, rawSubject: g.rawSubject, rawColumn: g.rawColumn,
+        rawValue: g.rawValue, label: g.label, type: g.type, needsReview: g.needsReview,
+      })),
+      rawGrades: data.rawGradeRows,
+    }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `magisterpro-cijferdiagnose-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast("Diagnose gedownload", "success", "Controleer het bestand op persoonsgegevens voordat je het deelt.");
+  };
+
   const commitValue = (g: Grade) => {
     const text = (drafts[g.id] ?? valueText(g)).replace(/\s/g, "").replace(",", ".");
     const value = Number.parseFloat(text);
@@ -44,7 +63,10 @@ export function GradeDetectionPanel() {
   return (
     <div className="space-y-4">
       <div className="panel p-5">
-        <h2 className="section-title flex items-center gap-2"><ScanSearch size={17} className="text-accent" /> Cijferdetectie</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 className="section-title flex items-center gap-2"><ScanSearch size={17} className="text-accent" /> Cijferdetectie</h2>
+          <button onClick={downloadDiagnostics} className="btn-secondary"><Download size={13} /> Download diagnose</button>
+        </div>
         <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
           Magister gebruikt per school andere veldnamen. Controleer hier welke kolommen en cijfers bij welk vak horen; je keuzes worden bewaard en blijven na elke sync staan.
         </p>

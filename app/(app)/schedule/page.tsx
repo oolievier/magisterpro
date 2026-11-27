@@ -293,7 +293,7 @@ function ScheduleView() {
             const minutes = Math.round((new Date(next.start).getTime() - new Date(a.end).getTime()) / 60_000);
             if (minutes < 15) return [];
             const lunch = new Date(a.end).getHours() < 13 && new Date(next.start).getHours() >= 12 && minutes >= 30;
-            return [{ start: a.end, end: next.start, minutes, label: lunch ? "Lunchpauze" : minutes >= 45 ? "Pauze" : "Tussenuur" }];
+            return [{ start: a.end, end: next.start, minutes, label: lunch ? "Lunchpauze" : minutes >= 45 ? "Tussenuur" : "Pauze" }];
           });
         };
         const lanesFor = (appts: Appointment[]) => {
